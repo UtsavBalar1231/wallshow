@@ -1,0 +1,2 @@
+bin/wallshow usr/bin
+lib/* usr/lib/wallshow

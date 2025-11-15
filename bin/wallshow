@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# wallshow - Professional Wallpaper Manager for Wayland/X11
+# Author: UtsavBalar1231 <utsavbalar1231@gmail.com>
+# Version: 1.0.0
+# License: MIT
+# Requires: bash 5.0+, jq, flock
+
+set -euo pipefail
+IFS=$'\n\t'
+
+# ============================================================================
+# SCRIPT PATH & LIBRARY LOCATION DETECTION
+# ============================================================================
+
+# Script path (needed for IPC socket handler)
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+declare -r SCRIPT_PATH
+
+# Detect library location (dev vs system install)
+WALLSHOW_LIB="${WALLSHOW_LIB:-}"
+if [[ -z "${WALLSHOW_LIB}" ]]; then
+    if [[ -d "$(dirname "$0")/../lib" ]]; then
+        # Development mode
+        WALLSHOW_LIB="$(cd "$(dirname "$0")/../lib" && pwd)"
+    else
+        # System install
+        WALLSHOW_LIB="/usr/lib/wallshow"
+    fi
+fi
+
+# ============================================================================
+# SOURCE MODULES IN DEPENDENCY ORDER
+# ============================================================================
+
+# Core modules (no external dependencies)
+source "${WALLSHOW_LIB}/core/constants.sh"
+source "${WALLSHOW_LIB}/core/logging.sh"
+source "${WALLSHOW_LIB}/core/state.sh"
+source "${WALLSHOW_LIB}/core/config.sh"
+
+# System modules (depend on core)
+source "${WALLSHOW_LIB}/system/paths.sh"
+source "${WALLSHOW_LIB}/system/locking.sh"
+source "${WALLSHOW_LIB}/system/init.sh"
+
+# Wallpaper modules (depend on system)
+source "${WALLSHOW_LIB}/wallpaper/discovery.sh"
+source "${WALLSHOW_LIB}/wallpaper/selection.sh"
+source "${WALLSHOW_LIB}/wallpaper/backends.sh"
+
+# Animation modules (depend on wallpaper)
+source "${WALLSHOW_LIB}/animation/gif.sh"
+source "${WALLSHOW_LIB}/animation/playback.sh"
+
+# Daemon modules (depend on animation)
+source "${WALLSHOW_LIB}/daemon/process.sh"
+source "${WALLSHOW_LIB}/daemon/ipc.sh"
+source "${WALLSHOW_LIB}/daemon/loop.sh"
+
+# CLI modules (depend on daemon)
+source "${WALLSHOW_LIB}/cli/interface.sh"
+source "${WALLSHOW_LIB}/cli/commands.sh"
+
+# ============================================================================
+# MAIN ENTRY POINT
+# ============================================================================
+
+# Run main if executed directly (not sourced)
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

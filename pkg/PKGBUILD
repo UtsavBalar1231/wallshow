@@ -1,0 +1,37 @@
+# Maintainer: UtsavBalar1231 <utsavbalar1231@gmail.com>
+pkgname=wallshow
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Professional wallpaper manager for Wayland/X11"
+arch=('any')
+url="https://github.com/UtsavBalar1231/wallshow"
+license=('MIT')
+depends=('bash>=5.0' 'jq' 'socat')
+optdepends=(
+    'imagemagick: GIF animation support'
+    'swww: Wayland wallpaper backend (animated support)'
+    'swaybg: Wayland wallpaper backend (lightweight)'
+    'feh: X11 wallpaper backend'
+    'xwallpaper: X11 wallpaper backend (alternative)'
+)
+source=("$pkgname-$pkgver.tar.gz::https://github.com/UtsavBalar1231/$pkgname/archive/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+package() {
+    cd "$srcdir/$pkgname-$pkgver"
+
+    # Install main executable
+    install -Dm755 bin/wallshow "$pkgdir/usr/bin/wallshow"
+
+    # Install library modules (preserving directory structure)
+    install -dm755 "$pkgdir/usr/lib/wallshow"
+    cp -r lib/* "$pkgdir/usr/lib/wallshow/"
+
+    # Set proper permissions for library files
+    find "$pkgdir/usr/lib/wallshow" -type f -exec chmod 644 {} \;
+    find "$pkgdir/usr/lib/wallshow" -type d -exec chmod 755 {} \;
+
+    # Install documentation
+    install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

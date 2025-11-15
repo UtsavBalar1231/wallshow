@@ -1,0 +1,12 @@
+wallshow (1.0.0-1) unstable; urgency=medium
+
+  * Initial release
+  * Modular architecture with feature-based organization
+  * Support for static and animated (GIF) wallpapers
+  * Daemon mode with automatic rotation
+  * Battery optimization support
+  * IPC control via Unix sockets
+  * Multiple backend support (swww, swaybg, feh, xwallpaper)
+  * XDG Base Directory specification compliance
+
+ -- UtsavBalar1231 <utsavbalar1231@gmail.com>  Fri, 15 Nov 2025 00:00:00 +0000

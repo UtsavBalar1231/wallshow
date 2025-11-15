@@ -1,0 +1,32 @@
+Source: wallshow
+Section: utils
+Priority: optional
+Maintainer: UtsavBalar1231 <utsavbalar1231@gmail.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Homepage: https://github.com/UtsavBalar1231/wallshow
+Vcs-Browser: https://github.com/UtsavBalar1231/wallshow
+Vcs-Git: https://github.com/UtsavBalar1231/wallshow.git
+Rules-Requires-Root: no
+
+Package: wallshow
+Architecture: all
+Depends: ${misc:Depends},
+         bash (>= 5.0),
+         jq,
+         socat
+Recommends: imagemagick
+Suggests: swww | swaybg | feh | xwallpaper
+Description: Professional wallpaper manager for Wayland/X11
+ Wallshow is a wallpaper manager for Wayland and X11 window systems written
+ in Bash. It provides automated wallpaper rotation with support for both
+ static and animated (GIF) wallpapers.
+ .
+ Features:
+  * Daemon mode with automatic wallpaper rotation
+  * Support for static images and animated GIFs
+  * Battery optimization (disable animations on battery)
+  * IPC control via Unix sockets
+  * Multiple backend support (swww, swaybg, feh, xwallpaper)
+  * XDG Base Directory specification compliance
+  * JSON-based configuration and state management
