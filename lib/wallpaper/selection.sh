@@ -20,7 +20,10 @@ select_random_wallpaper() {
 	local selected
 	local attempts=0
 	while [[ ${attempts} -lt 10 ]]; do
-		selected=$(echo "${wallpapers}" | jq -r '.[] | select(. != null)' | shuf -n1)
+		if ! selected=$(echo "${wallpapers}" | jq -r '.[] | select(. != null)' | shuf -n1); then
+			log_error "Failed to select wallpaper"
+			return 1
+		fi
 
 		if [[ -z "${selected}" ]]; then
 			log_error "Failed to select wallpaper"

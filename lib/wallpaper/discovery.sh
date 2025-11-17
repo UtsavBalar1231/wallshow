@@ -62,14 +62,16 @@ discover_wallpapers() {
 	# Find wallpaper files - log permission errors instead of suppressing
 	local find_errors
 	find_errors=$(mktemp)
-	while IFS= read -r file; do
-		[[ -z "${file}" ]] && continue
-		file_array+=("${file}")
-		count=$((count + 1))
-	done < <(find "${dir}" -type f \( \
+	if find_output=$(find "${dir}" -type f \( \
 		-iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" \
 		-o -iname "*.webp" -o -iname "*.gif" -o -iname "*.bmp" \
-		\) "${exclude_args[@]}" 2>"${find_errors}")
+		\) "${exclude_args[@]}" 2>"${find_errors}"); then
+		while IFS= read -r file; do
+			[[ -z "${file}" ]] && continue
+			file_array+=("${file}")
+			count=$((count + 1))
+		done <<<"${find_output}"
+	fi
 
 	# Log any permission or access errors from find
 	if [[ -s "${find_errors}" ]]; then
@@ -104,12 +106,12 @@ get_wallpaper_list() {
 	local wallpaper_dir
 
 	if [[ "${use_animated}" == "true" ]]; then
-		wallpaper_dir=$(get_config '.wallpaper_dirs.animated' "$HOME/Pictures/wallpapers/animated")
-		wallpaper_dir="${wallpaper_dir/#\~/$HOME}"
+		wallpaper_dir=$(get_config '.wallpaper_dirs.animated' "${HOME}/Pictures/wallpapers/animated")
+		wallpaper_dir="${wallpaper_dir/#\~/${HOME}}"
 		discover_wallpapers "${wallpaper_dir}" "animated" "false"
 	else
-		wallpaper_dir=$(get_config '.wallpaper_dirs.static' "$HOME/Pictures/wallpapers")
-		wallpaper_dir="${wallpaper_dir/#\~/$HOME}"
+		wallpaper_dir=$(get_config '.wallpaper_dirs.static' "${HOME}/Pictures/wallpapers")
+		wallpaper_dir="${wallpaper_dir/#\~/${HOME}}"
 		discover_wallpapers "${wallpaper_dir}" "static" "false"
 	fi
 }

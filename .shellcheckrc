@@ -1,0 +1,37 @@
+# Shellcheck configuration for wallshow
+# See https://github.com/koalaman/shellcheck/wiki/Configuration
+
+# Specify shell dialect (bash)
+shell=bash
+
+# Enable additional optional checks
+enable=all
+
+# Disable specific warnings that don't apply to wallshow's architecture:
+
+# SC1090: Can't follow non-constant source
+# Wallshow uses dynamic sourcing with WALLSHOW_LIB variable
+disable=SC1090
+
+# SC1091: Not following sourced files
+# Module dependencies are intentionally managed via strict sourcing order
+disable=SC1091
+
+# SC2034: Variable appears unused
+# SCRIPT_PATH in bin/wallshow is used in sourced modules (ipc.sh, commands.sh)
+# Shellcheck can't track usage across sourced files despite source-path setting
+disable=SC2034
+
+# SC2154: Variable is referenced but not assigned
+# Wallshow's modular architecture uses variables from sourced modules
+# (e.g., VERSION, LOG_LEVEL, STATE_FILE from core/constants.sh)
+# These are guaranteed to exist due to strict sourcing order in bin/wallshow
+disable=SC2154
+
+# SC2312: Consider invoking command separately to avoid masking return value
+# We use explicit if/then/else error handling throughout the codebase
+disable=SC2312
+
+# Source path for external sources (allows --external-sources flag)
+# This helps shellcheck understand our modular structure
+source-path=SCRIPTDIR

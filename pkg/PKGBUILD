@@ -13,7 +13,9 @@ optdepends=(
     'swaybg: Wayland wallpaper backend (lightweight)'
     'feh: X11 wallpaper backend'
     'xwallpaper: X11 wallpaper backend (alternative)'
+    'logrotate: Automatic log rotation'
 )
+backup=('etc/logrotate.d/wallshow')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/UtsavBalar1231/$pkgname/archive/v$pkgver.tar.gz")
 sha256sums=('SKIP')
 
@@ -30,6 +32,12 @@ package() {
     # Set proper permissions for library files
     find "$pkgdir/usr/lib/wallshow" -type f -exec chmod 644 {} \;
     find "$pkgdir/usr/lib/wallshow" -type d -exec chmod 755 {} \;
+
+    # Install logrotate configuration
+    install -Dm644 logrotate.d/wallshow "$pkgdir/etc/logrotate.d/wallshow"
+
+    # Install systemd user service
+    install -Dm644 systemd/wallshow.service "$pkgdir/usr/lib/systemd/user/wallshow.service"
 
     # Install documentation
     install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"

@@ -6,6 +6,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Wallshow is a professional wallpaper manager for Wayland/X11 written in Bash. It provides automated wallpaper rotation with support for both static and animated (GIF) wallpapers, daemon mode operation, battery optimization, and IPC control via Unix sockets.
 
+## Quick Reference
+
+**Common Commands:**
+```bash
+# Development
+just install          # Install to ~/.local (includes systemd service)
+just uninstall        # Remove from ~/.local (stops/disables service)
+just run help         # Run from source without installing
+just lint             # Run shellcheck
+just ci-local         # Run all CI checks locally
+
+# Testing
+wallshow -d daemon    # Run daemon in foreground with debug
+wallshow status | jq  # Check current status
+tail -f ~/.local/state/wallshow/wallpaper.log  # Monitor logs
+
+# Building
+just build-all        # Build all packages (Debian, Arch, RPM)
+```
+
+**Key Files to Modify:**
+- State schema: `system/init.sh:init_state()`
+- Config schema: `core/constants.sh:DEFAULT_CONFIG`
+- Module loading order: `bin/wallshow` (top section)
+
 ## Core Architecture
 
 ### Modular Design
@@ -105,8 +130,11 @@ Multi-tool support with intelligent fallback:
 git clone https://github.com/UtsavBalar1231/wallshow.git
 cd wallshow
 
-# Install to ~/.local for testing (no root required)
+# Install to ~/.local for testing (no root required, includes systemd service)
 just install
+
+# Enable auto-start on login (optional)
+systemctl --user enable --now wallshow.service
 
 # Or run directly from source without installing
 # Note: bin/wallshow auto-detects lib/ in dev mode, so WALLSHOW_LIB is optional
@@ -323,14 +351,19 @@ The config.json schema:
 
 **Note**: Wallshow currently has no automated test suite. All testing is manual.
 
-When modifying core functionality, test these scenarios:
-1. **Concurrent starts**: Run two instances simultaneously (should fail with E_LOCKED)
-2. **State corruption**: Delete/corrupt state.json while running (should auto-recover)
-3. **Tool availability**: Test with only one wallpaper tool available
-4. **GIF handling**: Test with large GIFs (cache size limits, extraction failures)
-5. **Battery transitions**: Simulate AC ↔ battery changes (animated should pause)
-6. **Signal handling**: Send HUP (config reload), TERM (graceful shutdown)
-7. **IPC commands**: Test all socket commands (next, pause, resume, stop, etc.)
+**Before submitting changes, test these scenarios:**
+
+1. **Fresh install**: Remove `~/.config/wallshow`, `~/.local/state/wallshow`, test first run
+2. **Daemon lifecycle**: `start`, `status`, `next`, `pause`, `resume`, `stop`
+3. **Concurrent starts**: Run two instances simultaneously (should fail with E_LOCKED)
+4. **State corruption**: Delete/corrupt state.json while running (should auto-recover)
+5. **IPC commands**: Test all socket commands work correctly
+6. **Config reload**: Change config, reload, verify changes applied
+7. **Tool availability**: Test with only one wallpaper tool available
+8. **GIF handling**: Test with large GIFs (cache size limits, extraction failures)
+9. **Battery transitions**: Simulate AC ↔ battery changes (animated should pause)
+10. **Signal handling**: Send HUP (config reload), TERM (graceful shutdown)
+11. **Error conditions**: Invalid config, missing directories, stale locks
 
 ## Code Style
 
@@ -345,6 +378,64 @@ This codebase follows strict Bash best practices:
 
 See CONTRIBUTING.md for detailed code style guidelines.
 
+### Commit Messages
+
+Follow [Conventional Commits](https://www.conventionalcommits.org/):
+
+**Format:**
+```
+<type>(<optional scope>): <description>
+
+[optional body]
+```
+
+**Types:**
+- `feat`: New feature
+- `fix`: Bug fix
+- `docs`: Documentation changes
+- `refactor`: Code refactoring (no behavior change)
+- `test`: Adding or updating tests
+- `chore`: Maintenance tasks
+
+**Examples:**
+```bash
+feat(animation): add configurable GIF loop count
+fix(daemon): handle SIGTERM gracefully
+docs(readme): add systemd autostart instructions
+refactor(state): extract atomic update logic to helper function
+```
+
+## Common Issues and Solutions
+
+### "Instance already locked" error
+```bash
+# Check if wallshow is actually running
+pgrep -f wallshow
+
+# If no process, remove stale lock
+rm /run/user/$(id -u)/wallshow/instance.lock
+```
+
+### "command not found: wallshow" after local install
+```bash
+# Ensure ~/.local/bin is in PATH
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+### Wallpaper not changing
+1. Check daemon status: `wallshow status`
+2. Verify wallpaper directory exists and contains images
+3. Check logs: `tail -f ~/.local/state/wallshow/wallpaper.log`
+4. Test wallpaper discovery: `jq '.cache.static.files[]' ~/.local/state/wallshow/state.json`
+
+### GIFs not playing on battery
+Battery optimization is enabled by default. To disable:
+```bash
+jq '.behavior.battery_optimization = false' ~/.config/wallshow/config.json > /tmp/config.json
+mv /tmp/config.json ~/.config/wallshow/config.json
+wallshow reload
+```
+
 ## Packaging
 
 Wallshow includes native packaging for:
@@ -358,6 +449,8 @@ All packages install to:
 /usr/bin/wallshow                    # Main executable
 /usr/lib/wallshow/                   # Library modules (preserved structure)
 /usr/share/doc/wallshow/             # Documentation
+/etc/logrotate.d/wallshow            # Logrotate configuration
+/usr/lib/systemd/user/wallshow.service  # Systemd user service
 ```
 
 Build with:
@@ -375,6 +468,8 @@ Common tasks are automated via `just`:
 - `just install` - Install to ~/.local for testing
 - `just uninstall` - Remove local installation
 - `just lint` - Run shellcheck on all shell code
+- `just pre-commit` - Run pre-commit hooks manually
+- `just ci-local` - Run all CI checks locally
 - `just run <args>` - Run from source without installing
 - `just build-deb` - Build Debian package
 - `just build-pkg` - Build Arch package
@@ -384,16 +479,93 @@ Common tasks are automated via `just`:
 
 See `just --list` for all available commands.
 
+## Log Rotation
+
+Wallshow uses **logrotate** for professional log management (custom rotation logic was removed in favor of logrotate):
+
+**Configuration**: `/etc/logrotate.d/wallshow`
+- Daily rotation, keeps 7 days
+- Gzip compression (delayed)
+- Uses `copytruncate` to avoid interrupting daemon
+- Handles all `*.log` files in `~/.local/state/wallshow/`
+
+**Manual rotation test**:
+```bash
+logrotate -d /etc/logrotate.d/wallshow  # Dry run
+```
+
+The configuration is installed automatically by all packages and marked as `config(noreplace)` to preserve local modifications.
+
+## Systemd Integration
+
+Wallshow can run as a **systemd user service** for automatic startup:
+
+**Enable and start**:
+```bash
+systemctl --user enable wallshow.service
+systemctl --user start wallshow.service
+```
+
+**Check status**:
+```bash
+systemctl --user status wallshow.service
+```
+
+**View logs**:
+```bash
+journalctl --user -u wallshow.service -f
+```
+
+The service file is installed to `/usr/lib/systemd/user/wallshow.service` by all packages.
+
+## CI/CD Pipeline
+
+Wallshow uses **GitHub Actions** for automated testing and releases:
+
+**Workflows**:
+- **lint.yml**: Runs on push/PR - shellcheck, shfmt, YAML validation, packaging checks
+- **build.yml**: Builds all packages (Debian, Arch, RPM) on push/PR, uploads artifacts
+- **release.yml**: Triggered by git tags (v*.*.*) - builds packages, creates GitHub release with assets
+
+**Local CI simulation**:
+```bash
+just ci-local  # Run all CI checks locally
+```
+
+## Pre-commit Hooks
+
+Wallshow includes **pre-commit** configuration for automated code quality checks:
+
+**Setup**:
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+**Manual run**:
+```bash
+pre-commit run --all-files
+# or
+just pre-commit
+```
+
+**Hooks configured**:
+- shellcheck (linting)
+- shfmt (formatting)
+- trailing whitespace removal
+- end-of-file newline fixer
+- large file detection
+- YAML/JSON validation
+
+See `.pre-commit-config.yaml` for full configuration.
+
 ## Future Enhancements
 
 Planned features for future releases:
 
-- Logrotate support for better log management
-- CI/CD pipeline for automated testing (GitHub Actions)
 - Man page generation from README
 - Multi-monitor configuration support
 - Additional backends (hyprpaper, mpvpaper)
-- Systemd user service file
 
 See GitHub issues for current feature requests and roadmap.
 

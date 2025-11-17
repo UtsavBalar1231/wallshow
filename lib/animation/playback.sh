@@ -11,9 +11,12 @@ animate_gif_frames() {
 	local frame_delay="$2"
 
 	local frames=()
-	while IFS= read -r frame; do
-		frames+=("${frame}")
-	done < <(find "${frame_dir}" -name "frame_*.png" | sort -V)
+	local find_output
+	if find_output=$(find "${frame_dir}" -name "frame_*.png" 2>/dev/null); then
+		while IFS= read -r frame; do
+			frames+=("${frame}")
+		done < <(echo "${find_output}" | sort -V 2>/dev/null)
+	fi
 
 	if [[ ${#frames[@]} -eq 0 ]]; then
 		log_error "No frames found in: ${frame_dir}"
@@ -24,13 +27,18 @@ animate_gif_frames() {
 	local delays=()
 	local delays_file="${frame_dir}/delays.json"
 	if [[ -f "${delays_file}" ]]; then
-		while IFS= read -r delay_cs; do
-			# Convert centiseconds to milliseconds (cs * 10 = ms)
-			local delay_ms=$((delay_cs * 10))
-			# Apply minimum delay of 10ms for delay=0 frames (prevents CPU busy loop)
-			[[ ${delay_ms} -lt 10 ]] && delay_ms=10
-			delays+=("${delay_ms}")
-		done < <(jq -r '.[]' "${delays_file}" 2>/dev/null || echo "")
+		local delays_data
+		if delays_data=$(jq -r '.[]' "${delays_file}" 2>/dev/null); then
+			if [[ -n "${delays_data}" ]]; then
+				while IFS= read -r delay_cs; do
+					# Convert centiseconds to milliseconds (cs * 10 = ms)
+					local delay_ms=$((delay_cs * 10))
+					# Apply minimum delay of 10ms for delay=0 frames (prevents CPU busy loop)
+					[[ ${delay_ms} -lt 10 ]] && delay_ms=10
+					delays+=("${delay_ms}")
+				done <<<"${delays_data}"
+			fi
+		fi
 	fi
 
 	# Determine if using native delays or config default
@@ -76,7 +84,12 @@ animate_gif_frames() {
 		frame_index=$(((frame_index + 1) % ${#frames[@]}))
 
 		# Sleep for frame delay (convert milliseconds to seconds)
-		sleep "$(awk "BEGIN {printf \"%.3f\", ${current_delay_ms}/1000}")"
+		local sleep_seconds
+		if sleep_seconds=$(awk "BEGIN {printf \"%.3f\", ${current_delay_ms}/1000}"); then
+			sleep "${sleep_seconds}"
+		else
+			sleep 0.050 # Fallback to 50ms
+		fi
 	done
 }
 

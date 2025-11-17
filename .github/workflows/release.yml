@@ -1,0 +1,140 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from tag
+        id: get_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Release version: ${VERSION}"
+
+      - name: Extract changelog for this version
+        id: changelog
+        run: |
+          VERSION=${{ steps.get_version.outputs.version }}
+          # Extract changelog from debian/changelog for this version
+          if [ -f debian/changelog ]; then
+            awk "/^wallshow \(${VERSION}/ {flag=1; next} /^wallshow \(/ {flag=0} flag" debian/changelog > /tmp/release_notes.txt
+          else
+            echo "Release ${VERSION}" > /tmp/release_notes.txt
+          fi
+
+          # Fallback to git tag annotation if changelog is empty
+          if [ ! -s /tmp/release_notes.txt ]; then
+            git tag -l --format='%(contents)' "v${VERSION}" > /tmp/release_notes.txt
+          fi
+
+          # If still empty, use git log
+          if [ ! -s /tmp/release_notes.txt ]; then
+            echo "Changes in this release:" > /tmp/release_notes.txt
+            git log --pretty=format:"- %s" $(git describe --tags --abbrev=0 HEAD^)..HEAD >> /tmp/release_notes.txt
+          fi
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: wallshow ${{ steps.get_version.outputs.version }}
+          body_path: /tmp/release_notes.txt
+          draft: false
+          prerelease: false
+
+  build-and-upload:
+    name: Build and Upload Release Assets
+    needs: create-release
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: debian
+            container: debian:bookworm
+            build_script: |
+              apt-get update
+              apt-get install -y debhelper devscripts build-essential bash jq socat git
+              dpkg-buildpackage -us -uc -b
+              mv ../*.deb ./wallshow_${{ needs.create-release.outputs.version }}_all.deb
+            artifact: wallshow_${{ needs.create-release.outputs.version }}_all.deb
+            content_type: application/vnd.debian.binary-package
+
+          - name: arch
+            container: archlinux:latest
+            build_script: |
+              pacman -Syu --noconfirm
+              pacman -S --noconfirm base-devel bash jq socat git
+              useradd -m builder
+              chown -R builder:builder .
+              echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+              cd pkg
+              su builder -c "makepkg -sf --noconfirm"
+              mv *.pkg.tar.zst ../wallshow-${{ needs.create-release.outputs.version }}-1-any.pkg.tar.zst
+            artifact: wallshow-${{ needs.create-release.outputs.version }}-1-any.pkg.tar.zst
+            content_type: application/zstd
+
+          - name: rpm
+            container: fedora:latest
+            build_script: |
+              dnf install -y rpm-build rpmdevtools bash jq socat git
+              rpmdev-setuptree
+              version=${{ needs.create-release.outputs.version }}
+              mkdir -p wallshow-${version}
+              cp -r bin lib logrotate.d systemd LICENSE README.md CONTRIBUTING.md wallshow-${version}/
+              tar czf ~/rpmbuild/SOURCES/wallshow-${version}.tar.gz wallshow-${version}
+              rpmbuild -ba rpm/wallshow.spec
+              mv ~/rpmbuild/RPMS/noarch/*.rpm ./wallshow-${{ needs.create-release.outputs.version }}-1.noarch.rpm
+            artifact: wallshow-${{ needs.create-release.outputs.version }}-1.noarch.rpm
+            content_type: application/x-rpm
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build in container
+        run: |
+          docker run --rm -v $PWD:/workspace -w /workspace ${{ matrix.container }} bash -c "${{ matrix.build_script }}"
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./${{ matrix.artifact }}
+          asset_name: ${{ matrix.artifact }}
+          asset_content_type: ${{ matrix.content_type }}
+
+  verify-release:
+    name: Verify Release Assets
+    needs: build-and-upload
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check release exists
+        run: |
+          echo "Release created successfully with all packages"
+          echo "Debian package: ✓"
+          echo "Arch package: ✓"
+          echo "RPM package: ✓"

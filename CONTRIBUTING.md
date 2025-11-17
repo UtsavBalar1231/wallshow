@@ -7,9 +7,13 @@ Thank you for your interest in contributing to Wallshow! This document provides 
 - [Code of Conduct](#code-of-conduct)
 - [Getting Started](#getting-started)
 - [Development Setup](#development-setup)
+  - [Setting Up Pre-commit Hooks](#setting-up-pre-commit-hooks)
+  - [Running CI Checks Locally](#running-ci-checks-locally)
 - [Project Structure](#project-structure)
 - [Code Style](#code-style)
 - [Submitting Changes](#submitting-changes)
+  - [CI/CD Pipeline](#cicd-pipeline)
+  - [Automated Releases](#automated-releases)
 - [Reporting Issues](#reporting-issues)
 - [Feature Requests](#feature-requests)
 
@@ -21,13 +25,20 @@ Be respectful and constructive in all interactions. We're here to build great so
 
 ### Prerequisites
 
+**Required**:
 - bash ≥ 5.0
 - jq
 - socat
-- ImageMagick (optional, for GIF support)
 - At least one wallpaper backend (swww, swaybg, feh, or xwallpaper)
-- [just](https://github.com/casey/just) (recommended for development)
-- shellcheck (recommended for linting)
+
+**Optional**:
+- ImageMagick (for GIF support)
+
+**Development tools** (recommended):
+- [just](https://github.com/casey/just) - task automation
+- shellcheck - shell script linting
+- shfmt - shell script formatting
+- pre-commit - git hook framework (`pip install pre-commit`)
 
 ### Fork and Clone
 
@@ -79,6 +90,53 @@ just uninstall
 rm -f ~/.local/bin/wallshow
 rm -rf ~/.local/lib/wallshow
 ```
+
+### Setting Up Pre-commit Hooks
+
+Wallshow uses pre-commit hooks to ensure code quality before commits:
+
+```bash
+# Install pre-commit framework
+pip install pre-commit
+
+# Install the git hooks
+pre-commit install
+
+# Run hooks manually on all files
+pre-commit run --all-files
+
+# Or use the Justfile
+just pre-commit
+```
+
+**Hooks configured**:
+- **shellcheck**: Lints all shell scripts
+- **shfmt**: Checks shell script formatting
+- **trailing-whitespace**: Removes trailing whitespace
+- **end-of-file-fixer**: Ensures files end with newline
+- **check-added-large-files**: Prevents accidentally committing large files
+- **check-yaml/json**: Validates YAML and JSON files
+
+After installation, hooks run automatically on `git commit`. To skip hooks (not recommended):
+```bash
+git commit --no-verify
+```
+
+### Running CI Checks Locally
+
+Before pushing changes, run all CI checks locally to catch issues early:
+
+```bash
+# Run all CI checks (shellcheck, shfmt, pre-commit)
+just ci-local
+
+# Or run individual checks
+just lint           # shellcheck only
+just format-check   # shfmt only
+just pre-commit     # pre-commit hooks only
+```
+
+This simulates the GitHub Actions CI pipeline and helps ensure your PR will pass automated checks.
 
 ## Project Structure
 
@@ -313,13 +371,50 @@ git push origin feature/my-feature
 # - Screenshots (if UI-related)
 ```
 
+### CI/CD Pipeline
+
+When you create a pull request, GitHub Actions automatically runs several checks:
+
+**Lint Workflow** (`.github/workflows/lint.yml`):
+- Runs `shellcheck` on all shell scripts
+- Checks formatting with `shfmt`
+- Validates YAML files
+- Verifies packaging metadata consistency
+
+**Build Workflow** (`.github/workflows/build.yml`):
+- Builds Debian package on Ubuntu
+- Builds Arch package on Arch Linux
+- Builds RPM package on Fedora
+- Tests package installation
+- Uploads packages as artifacts
+
+All checks must pass before the PR can be merged. You can view detailed results in the "Checks" tab of your PR.
+
+**Running checks locally before pushing**:
+```bash
+just ci-local  # Runs all CI checks locally
+```
+
+### Automated Releases
+
+When maintainers create a version tag (e.g., `v1.0.1`), the release workflow automatically:
+1. Builds all packages (Debian, Arch, RPM)
+2. Creates a GitHub Release
+3. Uploads packages as release assets
+4. Extracts changelog from `debian/changelog` or git tag message
+
 ### PR Checklist
 
-- [ ] Code follows project style guidelines
+Before submitting your PR, ensure:
+
+- [ ] Code follows project style guidelines (see Code Style section)
 - [ ] All shellcheck warnings addressed or justified
-- [ ] Documentation updated (README, code comments)
+- [ ] Pre-commit hooks installed and passing (`just pre-commit`)
+- [ ] Local CI checks pass (`just ci-local`)
+- [ ] Documentation updated (README, CLAUDE.md, code comments)
 - [ ] Commit messages follow conventional format
 - [ ] PR description is clear and complete
+- [ ] Manual testing performed (see Testing Considerations in CLAUDE.md)
 
 ## Reporting Issues
 

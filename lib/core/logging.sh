@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# logging.sh - Logging system with rotation support
+# logging.sh - Logging system (rotation handled by logrotate)
 # Part of wallshow - Professional Wallpaper Manager for Wayland/X11
 
 # ============================================================================
@@ -26,32 +26,16 @@ log() {
 
 		# Console output - always to stderr to avoid polluting function output
 		if [[ "${IS_DAEMON}" == "false" ]]; then
+			# Interactive mode - log to stderr
+			echo "${log_line}" >&2
+		elif [[ -n "${JOURNAL_STREAM:-}" || -n "${INVOCATION_ID:-}" ]]; then
+			# Daemon under systemd - also log to stderr for journald capture
 			echo "${log_line}" >&2
 		fi
 
 		# File output - log file is initialized in init_directories()
+		# Rotation is handled externally by logrotate (/etc/logrotate.d/wallshow)
 		echo "${log_line}" >>"${LOG_FILE}"
-
-		# Rotate if needed (with lock to prevent race condition)
-		# Always acquire lock before checking size to avoid TOCTOU race
-		local rotate_lock="${LOG_FILE}.rotate.lock"
-		local rotate_fd
-		exec {rotate_fd}>"${rotate_lock}"
-		if flock -n "${rotate_fd}"; then
-			local max_size
-			max_size=$(get_config '.behavior.max_log_size_kb' '1024')
-			local current_size
-			current_size=$(du -k "${LOG_FILE}" | cut -f1)
-
-			if [[ ${current_size} -gt ${max_size} ]]; then
-				mv "${LOG_FILE}" "${LOG_FILE}.old"
-				touch "${LOG_FILE}"
-				chmod 600 "${LOG_FILE}"
-			fi
-			flock -u "${rotate_fd}"
-		fi
-		exec {rotate_fd}>&-
-		rm -f "${rotate_lock}"
 	fi
 }
 

@@ -1,0 +1,24 @@
+[Unit]
+Description=Wallshow - Professional Wallpaper Manager
+Documentation=man:wallshow(1)
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=forking
+PIDFile=/run/user/%U/wallshow/daemon.pid
+ExecStart=/usr/bin/wallshow daemon
+Restart=on-failure
+RestartSec=5s
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wallshow
+
+[Install]
+WantedBy=default.target

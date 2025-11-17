@@ -1,0 +1,24 @@
+# Logrotate configuration for wallshow
+#
+# This config handles rotation of wallshow log files in user's XDG_STATE_HOME
+# Default location: ~/.local/state/wallshow/wallpaper.log
+#
+# For system-wide installations, copy to /etc/logrotate.d/wallshow
+# For user-level logrotate, copy to ~/.config/logrotate/wallshow
+
+# Note: Logrotate expands ~ properly, but this assumes standard XDG paths
+# If XDG_STATE_HOME is customized, adjust path accordingly
+/home/*/.local/state/wallshow/*.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0600
+    nomail
+    dateext
+    dateformat -%Y%m%d
+    copytruncate
+    sharedscripts
+}

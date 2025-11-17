@@ -66,7 +66,12 @@ set_wallpaper_swaybg() {
 
 	# Kill existing swaybg instances spawned by us
 	local our_pids
-	our_pids=$(read_state '.processes.swaybg_pids // []' | jq -r '.[]')
+	local pids_json
+	if pids_json=$(read_state '.processes.swaybg_pids // []'); then
+		our_pids=$(echo "${pids_json}" | jq -r '.[]') || our_pids=""
+	else
+		our_pids=""
+	fi
 	if [[ -n "${our_pids}" ]]; then
 		while IFS= read -r pid; do
 			if kill -0 "${pid}" 2>/dev/null; then
@@ -163,6 +168,7 @@ set_wallpaper() {
 		swaybg) set_wallpaper_swaybg "${image}" && return 0 ;;
 		feh) set_wallpaper_feh "${image}" && return 0 ;;
 		xwallpaper) set_wallpaper_xwallpaper "${image}" && return 0 ;;
+		*) log_warn "Unsupported preferred tool: ${preferred_tool}" ;;
 		esac
 	fi
 
@@ -185,6 +191,7 @@ set_wallpaper() {
 		swaybg) set_wallpaper_swaybg "${image}" && return 0 ;;
 		feh) set_wallpaper_feh "${image}" && return 0 ;;
 		xwallpaper) set_wallpaper_xwallpaper "${image}" && return 0 ;;
+		*) log_debug "Skipping unsupported tool: ${tool}" ;;
 		esac
 	done <<<"${available_tools}"
 

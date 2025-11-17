@@ -1,5 +1,0 @@
-add logrotate support
-add debian, archlinux and fedora packaging
-add CI/CD
-add pre-commit checks
-add Justfile

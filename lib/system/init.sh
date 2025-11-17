@@ -37,7 +37,12 @@ cleanup_all_processes() {
 
 	# Stop swaybg processes
 	local swaybg_pids
-	swaybg_pids=$(read_state '.processes.swaybg_pids // []' | jq -r '.[]')
+	local pids_json
+	if pids_json=$(read_state '.processes.swaybg_pids // []'); then
+		swaybg_pids=$(echo "${pids_json}" | jq -r '.[]') || swaybg_pids=""
+	else
+		swaybg_pids=""
+	fi
 	if [[ -n "${swaybg_pids}" ]]; then
 		while IFS= read -r pid; do
 			if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
@@ -98,7 +103,7 @@ cleanup() {
 	fi
 
 	# Clean runtime files
-	rm -f "${SOCKET_FILE}" "${PID_FILE}" 2>/dev/null || true
+	rm -f "${SOCKET_FILE}" "${PID_FILE}" "${RUNTIME_DIR}/daemon.ready" 2>/dev/null || true
 
 	log_info "Cleanup completed"
 }

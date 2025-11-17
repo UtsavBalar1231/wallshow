@@ -14,9 +14,9 @@ declare -r VERSION="1.0.0"
 # XDG BASE DIRECTORY COMPLIANCE
 # ============================================================================
 
-declare -r XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
-declare -r XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
-declare -r XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+declare -r XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}"
+declare -r XDG_STATE_HOME="${XDG_STATE_HOME:-${HOME}/.local/state}"
+declare -r XDG_CACHE_HOME="${XDG_CACHE_HOME:-${HOME}/.cache}"
 declare -r XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 
 # ============================================================================

@@ -17,6 +17,7 @@ Requires:       jq
 Requires:       socat
 
 Recommends:     ImageMagick
+Recommends:     logrotate
 
 %description
 Wallshow is a wallpaper manager for Wayland and X11 window systems written
@@ -50,6 +51,12 @@ cp -r lib/* %{buildroot}%{_prefix}/lib/wallshow/
 find %{buildroot}%{_prefix}/lib/wallshow -type f -exec chmod 644 {} \;
 find %{buildroot}%{_prefix}/lib/wallshow -type d -exec chmod 755 {} \;
 
+# Install logrotate configuration
+install -Dm644 logrotate.d/wallshow %{buildroot}%{_sysconfdir}/logrotate.d/wallshow
+
+# Install systemd user service
+install -Dm644 systemd/wallshow.service %{buildroot}%{_userunitdir}/wallshow.service
+
 # Install documentation
 install -Dm644 README.md %{buildroot}%{_docdir}/%{name}/README.md
 install -Dm644 LICENSE %{buildroot}%{_datadir}/licenses/%{name}/LICENSE
@@ -59,6 +66,12 @@ install -Dm644 LICENSE %{buildroot}%{_datadir}/licenses/%{name}/LICENSE
 %doc README.md
 %{_bindir}/wallshow
 %{_prefix}/lib/wallshow/
+%config(noreplace) %{_sysconfdir}/logrotate.d/wallshow
+%{_userunitdir}/wallshow.service
+
+%post
+# Reload systemd user daemon for all users (best effort)
+systemctl --global daemon-reload 2>/dev/null || true
 
 %changelog
 * Fri Nov 15 2025 UtsavBalar1231 <utsavbalar1231@gmail.com> - 1.0.0-1

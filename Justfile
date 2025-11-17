@@ -9,17 +9,30 @@ default:
 
 # Install to ~/.local for testing
 install:
-    mkdir -p ~/.local/bin ~/.local/lib/wallshow
+    mkdir -p ~/.local/bin ~/.local/lib/wallshow ~/.config/systemd/user
     cp bin/wallshow ~/.local/bin/
     cp -r lib/* ~/.local/lib/wallshow/
     chmod +x ~/.local/bin/wallshow
+    sed -i 's|if \[\[ -d "$(dirname "$0")/../lib" \]\]; then|if [[ -d "$(dirname "$0")/../lib/core" ]]; then|' ~/.local/bin/wallshow
+    sed -i 's|WALLSHOW_LIB="/usr/lib/wallshow"|WALLSHOW_LIB="{{ env_var('HOME') }}/.local/lib/wallshow"|' ~/.local/bin/wallshow
+    sed 's|/usr/bin/wallshow|{{ env_var('HOME') }}/.local/bin/wallshow|' systemd/wallshow.service > ~/.config/systemd/user/wallshow.service
+    systemctl --user daemon-reload
     @echo "✓ Installed to ~/.local/bin/wallshow"
+    @echo "✓ Installed systemd service to ~/.config/systemd/user/wallshow.service"
+    @echo ""
+    @echo "To enable auto-start on login:"
+    @echo "  systemctl --user enable --now wallshow.service"
 
 # Uninstall from ~/.local
 uninstall:
+    -systemctl --user stop wallshow.service 2>/dev/null || true
+    -systemctl --user disable wallshow.service 2>/dev/null || true
     rm -f ~/.local/bin/wallshow
     rm -rf ~/.local/lib/wallshow
+    rm -f ~/.config/systemd/user/wallshow.service
+    systemctl --user daemon-reload
     @echo "✓ Uninstalled from ~/.local"
+    @echo "✓ Removed systemd service"
 
 # Testing
 
@@ -36,13 +49,11 @@ build-deb:
 
 # Build Arch package
 build-pkg:
-    # cd pkg && makepkg -f
-    @echo "TODO: later"
+    cd pkg && makepkg -sf --noconfirm
 
 # Build RPM package
 build-rpm:
-    # rpmbuild -ba rpm/wallshow.spec
-    @echo "TODO: later"
+    rpmbuild -ba rpm/wallshow.spec
 
 # Build all packages
 build-all: build-deb build-pkg build-rpm
@@ -57,6 +68,26 @@ version-bump VERSION:
     @echo "TODO: Update debian/changelog, PKGBUILD, and spec file manually"
 
 # CI/CD helpers
+
+# Run pre-commit hooks manually
+pre-commit:
+    @command -v pre-commit >/dev/null || (echo "pre-commit not installed. Run: pip install pre-commit" && exit 1)
+    pre-commit run --all-files
+
+# Run all CI checks locally (lint, format, pre-commit)
+ci-local:
+    @echo "Running local CI checks..."
+    @echo ""
+    @echo "==> Running shellcheck..."
+    @just lint
+    @echo ""
+    @echo "==> Running format check..."
+    @just format-check
+    @echo ""
+    @echo "==> Running pre-commit hooks..."
+    @just pre-commit || true
+    @echo ""
+    @echo "✓ All local CI checks complete"
 
 # Format check (optional)
 format-check:

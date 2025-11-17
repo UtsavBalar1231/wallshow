@@ -45,13 +45,24 @@ extract_gif_frames() {
 	command -v magick &>/dev/null && identify_cmd="magick identify"
 
 	local delays_json
-	if delays_json=$(${identify_cmd} -format "%T\n" "${gif_path}" 2>/dev/null | jq -s '.'); then
-		echo "${delays_json}" >"${output_dir}/delays.json"
-		local frame_count
-		frame_count=$(echo "${delays_json}" | jq 'length')
-		log_info "Extracted ${frame_count} frame delays (centiseconds): ${delays_json}"
+	local identify_output
+	if identify_output=$(${identify_cmd} -format "%T\n" "${gif_path}" 2>/dev/null); then
+		if delays_json=$(echo "${identify_output}" | jq -s '.'); then
+			if [[ -n "${delays_json}" && "${delays_json}" != "null" && "${delays_json}" != "" ]]; then
+				echo "${delays_json}" >"${output_dir}/delays.json"
+				local frame_count
+				frame_count=$(echo "${delays_json}" | jq 'length')
+				log_info "Extracted ${frame_count} frame delays (centiseconds): ${delays_json}"
+			else
+				log_warn "Could not extract native frame delays, will use config default"
+				echo '[]' >"${output_dir}/delays.json"
+			fi
+		else
+			log_warn "Could not parse frame delays as JSON, will use config default"
+			echo '[]' >"${output_dir}/delays.json"
+		fi
 	else
-		log_warn "Could not extract native frame delays, will use config default"
+		log_warn "Could not extract native frame delays from ImageMagick, will use config default"
 		echo '[]' >"${output_dir}/delays.json"
 	fi
 
@@ -63,7 +74,19 @@ handle_animated_wallpaper() {
 
 	# Generate cache key from file hash
 	local gif_hash
-	gif_hash=$(sha256sum "${gif_path}" | cut -d' ' -f1)
+	local hash_output
+	if ! hash_output=$(sha256sum "${gif_path}"); then
+		log_error "Failed to compute hash for: ${gif_path}"
+		return 1
+	fi
+	if ! gif_hash=$(echo "${hash_output}" | cut -d' ' -f1); then
+		log_error "Failed to extract hash from sha256sum output"
+		return 1
+	fi
+	if [[ -z "${gif_hash}" ]]; then
+		log_error "Hash is empty for: ${gif_path}"
+		return 1
+	fi
 	local gifs_cache="${CACHE_DIR}/gifs/${gif_hash}"
 
 	# Check if frames are already extracted

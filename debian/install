@@ -1,2 +1,4 @@
 bin/wallshow usr/bin
 lib/* usr/lib/wallshow
+logrotate.d/wallshow etc/logrotate.d
+systemd/wallshow.service usr/lib/systemd/user

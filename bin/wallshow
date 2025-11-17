@@ -5,34 +5,31 @@
 # License: MIT
 # Requires: bash 5.0+, jq, flock
 
-set -euo pipefail
-IFS=$'\n\t'
-
 # ============================================================================
 # SCRIPT PATH & LIBRARY LOCATION DETECTION
 # ============================================================================
 
-# Script path (needed for IPC socket handler)
+# Script path
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 declare -r SCRIPT_PATH
 
 # Detect library location (dev vs system install)
 WALLSHOW_LIB="${WALLSHOW_LIB:-}"
 if [[ -z "${WALLSHOW_LIB}" ]]; then
-    if [[ -d "$(dirname "$0")/../lib" ]]; then
-        # Development mode
-        WALLSHOW_LIB="$(cd "$(dirname "$0")/../lib" && pwd)"
-    else
-        # System install
-        WALLSHOW_LIB="/usr/lib/wallshow"
-    fi
+	if [[ -d "$(dirname "$0")/../lib" ]]; then
+		# Development mode
+		WALLSHOW_LIB="$(cd "$(dirname "$0")/../lib" && pwd)"
+	else
+		# System install
+		WALLSHOW_LIB="/usr/lib/wallshow"
+	fi
 fi
 
 # ============================================================================
 # SOURCE MODULES IN DEPENDENCY ORDER
 # ============================================================================
 
-# Core modules (no external dependencies)
+# Core modules
 source "${WALLSHOW_LIB}/core/constants.sh"
 source "${WALLSHOW_LIB}/core/logging.sh"
 source "${WALLSHOW_LIB}/core/state.sh"
@@ -65,7 +62,6 @@ source "${WALLSHOW_LIB}/cli/commands.sh"
 # MAIN ENTRY POINT
 # ============================================================================
 
-# Run main if executed directly (not sourced)
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    main "$@"
+	main "$@"
 fi

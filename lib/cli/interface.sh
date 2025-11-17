@@ -80,14 +80,26 @@ show_info() {
 	echo
 	echo "Available Tools:"
 	echo "───────────────"
-	detect_available_tools | sed 's/^/  - /'
+	local tools_output
+	if tools_output=$(detect_available_tools); then
+		# Add prefix to each line
+		while IFS= read -r line; do
+			echo "  - ${line}"
+		done <<<"${tools_output}"
+	else
+		echo "  (none detected)"
+	fi
 
 	echo
 	echo "Cache Usage:"
 	echo "───────────"
 	if [[ -d "${CACHE_DIR}" ]]; then
 		local cache_size
-		cache_size=$(du -sh "${CACHE_DIR}" 2>/dev/null | cut -f1)
+		if cache_size=$(du -sh "${CACHE_DIR}" 2>/dev/null); then
+			cache_size=$(echo "${cache_size}" | cut -f1)
+		else
+			cache_size="unknown"
+		fi
 		printf "%-20s: %s\n" "Cache Size" "${cache_size}"
 	fi
 }
@@ -95,10 +107,24 @@ show_info() {
 list_wallpapers() {
 	echo "Static Wallpapers:"
 	echo "─────────────────"
-	get_wallpaper_list "false" | jq -r '.[]' | sed 's/^/  /'
+	local static_list
+	if static_list=$(get_wallpaper_list "false"); then
+		static_list=$(echo "${static_list}" | jq -r '.[]' 2>/dev/null | sed 's/^/  /')
+		[[ -z "${static_list}" ]] && static_list="  (none found)"
+	else
+		static_list="  (error retrieving list)"
+	fi
+	echo "${static_list}"
 
 	echo
 	echo "Animated Wallpapers:"
 	echo "───────────────────"
-	get_wallpaper_list "true" | jq -r '.[]' | sed 's/^/  /'
+	local animated_list
+	if animated_list=$(get_wallpaper_list "true"); then
+		animated_list=$(echo "${animated_list}" | jq -r '.[]' 2>/dev/null | sed 's/^/  /')
+		[[ -z "${animated_list}" ]] && animated_list="  (none found)"
+	else
+		animated_list="  (error retrieving list)"
+	fi
+	echo "${animated_list}"
 }

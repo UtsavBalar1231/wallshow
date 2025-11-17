@@ -1,0 +1,100 @@
+name: Lint
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          severity: warning
+          scandir: '.'
+          # Use project's .shellcheckrc configuration
+          check_together: 'yes'
+
+  shfmt:
+    name: Shell Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install shfmt
+        run: |
+          wget -qO /tmp/shfmt https://github.com/mvdan/sh/releases/download/v3.8.0/shfmt_v3.8.0_linux_amd64
+          chmod +x /tmp/shfmt
+          sudo mv /tmp/shfmt /usr/local/bin/shfmt
+
+      - name: Run shfmt check
+        run: |
+          # Check formatting (--diff shows differences without modifying)
+          # Using tabs (indent=0), case-indent, binary-next-line, space-redirects
+          shfmt --indent 0 --case-indent --binary-next-line --space-redirects --diff \
+            bin/wallshow lib/**/*.sh archive/*.sh
+
+      - name: Report formatting issues
+        if: failure()
+        run: |
+          echo "::error::Shell scripts are not properly formatted"
+          echo "Run locally: just format-check"
+          echo "To auto-fix: shfmt -i 0 -ci -bn -sr -w bin/wallshow lib/**/*.sh archive/*.sh"
+
+  yaml:
+    name: YAML Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate YAML files
+        uses: ibiqlik/action-yamllint@v3
+        with:
+          config_file: .yamllint.yml
+          strict: true
+          no_warnings: false
+        continue-on-error: true
+
+  validate-packaging:
+    name: Validate Packaging Metadata
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check Debian packaging
+        run: |
+          # Validate debian/control syntax
+          if [ -f debian/control ]; then
+            grep -q "^Package: wallshow" debian/control || {
+              echo "::error::Invalid debian/control"
+              exit 1
+            }
+          fi
+
+      - name: Check version consistency
+        run: |
+          # Extract versions from packaging files using simpler patterns
+          deb_version=$(grep '^wallshow (' debian/changelog | head -1 | sed 's/wallshow (\(.*\)).*/\1/')
+          arch_version=$(grep '^pkgver=' pkg/PKGBUILD | cut -d'=' -f2)
+          rpm_version=$(grep '^Version:' rpm/wallshow.spec | awk '{print $2}')
+
+          echo "Debian version: $deb_version"
+          echo "Arch version: $arch_version"
+          echo "RPM version: $rpm_version"
+
+          # Basic consistency check (versions should contain same base number)
+          base_version=$(echo "$deb_version" | cut -d'-' -f1)
+          if ! echo "$arch_version" | grep -q "$base_version" || \
+             ! echo "$rpm_version" | grep -q "$base_version"; then
+            echo "::warning::Version mismatch across packaging formats"
+          fi

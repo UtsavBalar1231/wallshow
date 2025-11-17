@@ -55,7 +55,9 @@ reload_config() {
 	fi
 
 	# Update log level if changed
-	if [[ "$(get_config '.behavior.debug' 'false')" == "true" ]]; then
+	local debug_flag
+	debug_flag=$(get_config '.behavior.debug' 'false')
+	if [[ "${debug_flag}" == "true" ]]; then
 		LOG_LEVEL=${LOG_DEBUG}
 	else
 		LOG_LEVEL=${LOG_INFO}

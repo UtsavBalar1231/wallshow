@@ -15,7 +15,14 @@ cleanup_cache() {
 
 	# Get current cache size
 	local current_size
-	current_size=$(du -sb "${CACHE_DIR}" | cut -f1)
+	if current_size=$(du -sb "${CACHE_DIR}" 2>/dev/null); then
+		current_size=$(echo "${current_size}" | cut -f1)
+		if [[ ! "${current_size}" =~ ^[0-9]+$ ]]; then
+			current_size="0"
+		fi
+	else
+		current_size="0"
+	fi
 
 	if [[ ${current_size} -le ${max_cache_bytes} ]]; then
 		log_debug "Cache size (${current_size} bytes) within limit"
@@ -33,7 +40,14 @@ cleanup_cache() {
 	while IFS= read -r dir; do
 		[[ -z "${dir}" ]] && continue
 		local dir_size
-		dir_size=$(du -sb "${dir}" | cut -f1)
+		if dir_size=$(du -sb "${dir}" 2>/dev/null); then
+			dir_size=$(echo "${dir_size}" | cut -f1)
+			if [[ ! "${dir_size}" =~ ^[0-9]+$ ]]; then
+				dir_size="0"
+			fi
+		else
+			dir_size="0"
+		fi
 		rm -rf "${dir}"
 		freed_space=$((freed_space + dir_size))
 		log_debug "Removed cache: ${dir} (freed ${dir_size} bytes)"
@@ -45,13 +59,25 @@ cleanup_cache() {
 	done < <(
 		# Use ls -t for portable timestamp-based sorting
 		# Sort by modification time (oldest first)
-		find "${CACHE_DIR}/gifs" -type d -mindepth 1 -maxdepth 1 2>/dev/null |
-			while IFS= read -r d; do
+		if find_output=$(find "${CACHE_DIR}/gifs" -type d -mindepth 1 -maxdepth 1 2>/dev/null); then
+			echo "${find_output}" | while IFS= read -r d; do
 				# Get modification time in seconds since epoch (portable approach)
 				if [[ -d "${d}" ]]; then
-					echo "$(stat -c %Y "${d}" 2>/dev/null || stat -f %m "${d}" 2>/dev/null) ${d}"
+					local mtime
+					if mtime=$(stat -c %Y "${d}" 2>/dev/null); then
+						echo "${mtime} ${d}"
+					elif mtime=$(stat -f %m "${d}" 2>/dev/null); then
+						echo "${mtime} ${d}"
+					else
+						echo "0 ${d}"
+					fi
 				fi
-			done | sort -n | cut -d' ' -f2-
+			done | {
+				if sort_output=$(sort -n 2>/dev/null); then
+					echo "${sort_output}" | cut -d' ' -f2- 2>/dev/null
+				fi
+			}
+		fi
 	)
 
 	log_info "Cache cleanup completed (freed $((freed_space / 1024 / 1024))MB)"

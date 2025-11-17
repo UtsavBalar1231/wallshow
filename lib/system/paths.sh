@@ -11,7 +11,7 @@ validate_path() {
 	local base_dir="$2"
 
 	# Expand tilde and resolve path
-	path="${path/#\~/$HOME}"
+	path="${path/#\~/${HOME}}"
 	local resolved
 	resolved=$(readlink -f "${path}" 2>/dev/null) || return 1
 
@@ -20,7 +20,7 @@ validate_path() {
 
 	# If base_dir provided, ensure path is within it
 	if [[ -n "${base_dir}" ]]; then
-		base_dir="${base_dir/#\~/$HOME}"
+		base_dir="${base_dir/#\~/${HOME}}"
 		base_dir=$(readlink -f "${base_dir}" 2>/dev/null) || return 1
 
 		# Check if resolved path starts with base_dir
@@ -34,5 +34,17 @@ validate_path() {
 sanitize_filename() {
 	local filename="$1"
 	# Remove path components and dangerous characters
-	basename "${filename}" | tr -d '\0' | sed 's/[^a-zA-Z0-9._-]/_/g'
+	local sanitized
+	local basename_output
+	if ! basename_output=$(basename "${filename}"); then
+		return 1
+	fi
+	if ! sanitized=$(echo "${basename_output}" | tr -d '\0' | sed 's/[^a-zA-Z0-9._-]/_/g'); then
+		return 1
+	fi
+	if [[ -z "${sanitized}" ]]; then
+		return 1
+	fi
+	echo "${sanitized}"
+	return 0
 }

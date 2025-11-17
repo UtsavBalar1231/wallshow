@@ -37,6 +37,9 @@ daemonize() {
 			# In a subshell, $$ would be the parent's PID, $BASHPID is this process
 			echo "${BASHPID}" >"${PID_FILE}"
 
+			# Signal parent that PID file is ready (prevents systemd race condition)
+			touch "${RUNTIME_DIR}/daemon.ready"
+
 			# Update state with daemon PID and starting status
 			update_state_atomic '.processes.main_pid = '"${BASHPID}"' | .status = "starting"' || log_warn "Failed to store main daemon PID in state"
 
@@ -59,6 +62,11 @@ daemonize() {
 		# NOTE: $! here is not the actual daemon PID due to setsid
 		# The child process writes its own PID above
 		log_info "Daemon started, parent exiting"
+
+		# Wait for child to signal readiness (prevents systemd PID file race)
+		local ready_file="${RUNTIME_DIR}/daemon.ready"
+		timeout 5 bash -c "while [[ ! -f '${ready_file}' ]]; do sleep 0.05; done" 2>/dev/null || true
+
 		echo "Daemon started. Check status with: $0 status"
 		exit 0
 	fi

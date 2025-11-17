@@ -1,0 +1,65 @@
+# Pre-commit hooks for wallshow
+# See https://pre-commit.com for more information
+# Installation: pip install pre-commit && pre-commit install
+# Manual run: pre-commit run --all-files
+repos:
+  # Shell script linting with shellcheck
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+        name: Lint shell scripts with shellcheck
+        args:
+          - --external-sources
+          - --shell=bash
+          - --severity=warning
+          - --enable=all
+        types: [shell]
+        # Include bin/wallshow even though it has no extension
+        files: \.(sh|bash)$|^bin/wallshow$
+  # Shell script formatting with shfmt
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.12.0-2
+    hooks:
+      - id: shfmt
+        name: Format shell scripts with shfmt
+        args:
+          - --diff # Show diff instead of modifying (use --write to auto-fix)
+        types: [shell]
+        files: \.(sh|bash)$|^bin/wallshow$
+  # Secret scanning with gitleaks
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.24.2
+    hooks:
+      - id: gitleaks
+        name: Scan for secrets with gitleaks
+  # General file quality checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        name: Trim trailing whitespace
+        types: [text]
+      - id: end-of-file-fixer
+        name: Ensure files end with newline
+        types: [text]
+      - id: check-added-large-files
+        name: Check for large files
+        args: [--maxkb=500]
+      - id: check-merge-conflict
+        name: Check for merge conflict markers
+      - id: check-yaml
+        name: Validate YAML files
+        types: [yaml]
+      - id: check-json
+        name: Validate JSON files
+        types: [json]
+      - id: mixed-line-ending
+        name: Check for mixed line endings
+        args: [--fix=lf]
+      - id: check-executables-have-shebangs
+        name: Check executables have shebangs
+      - id: check-shebang-scripts-are-executable
+        name: Check shebang scripts are executable
+        # Exclude lib/ - these are sourced modules, not executed directly
+        exclude: ^lib/
