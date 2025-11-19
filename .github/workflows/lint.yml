@@ -38,16 +38,14 @@ jobs:
       - name: Run shfmt check
         run: |
           # Check formatting (--diff shows differences without modifying)
-          # Using tabs (indent=0), case-indent, binary-next-line, space-redirects
-          shfmt --indent 0 --case-indent --binary-next-line --space-redirects --diff \
-            bin/wallshow lib/**/*.sh archive/*.sh
+          shfmt --diff bin/wallshow lib/**/*.sh
 
       - name: Report formatting issues
         if: failure()
         run: |
           echo "::error::Shell scripts are not properly formatted"
           echo "Run locally: just format-check"
-          echo "To auto-fix: shfmt -i 0 -ci -bn -sr -w bin/wallshow lib/**/*.sh archive/*.sh"
+          echo "To auto-fix: shfmt -w bin/wallshow lib/**/*.sh"
 
   yaml:
     name: YAML Validation

@@ -34,15 +34,16 @@ jobs:
         run: |
           dpkg-buildpackage -us -uc -b
 
-      - name: List generated packages
+      - name: Move generated packages to workspace
         run: |
-          ls -lh ../*.deb
+          mv ../*.deb ./
+          ls -lh *.deb
 
       - name: Upload Debian package
         uses: actions/upload-artifact@v4
         with:
           name: debian-package
-          path: ../*.deb
+          path: "*.deb"
           retention-days: 30
 
   build-arch:
@@ -65,6 +66,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Create source tarball for Arch build
+        run: |
+          version=1.0.0
+          mkdir -p pkg/src
+          tar czf pkg/wallshow-${version}.tar.gz \
+            --transform "s,^,wallshow-${version}/," \
+            bin lib logrotate.d systemd LICENSE README.md CONTRIBUTING.md
+          mv pkg/wallshow-${version}.tar.gz pkg/src/
 
       - name: Create build user (makepkg can't run as root)
         run: |
@@ -112,7 +122,7 @@ jobs:
 
       - name: Create source tarball
         run: |
-          version=$(grep -oP '(?<=^Version:\s+)[0-9.]+' rpm/wallshow.spec)
+          version=$(grep '^Version:' rpm/wallshow.spec | awk '{print $2}')
           mkdir -p wallshow-${version}
           cp -r bin lib logrotate.d systemd LICENSE README.md CONTRIBUTING.md wallshow-${version}/
           tar czf ~/rpmbuild/SOURCES/wallshow-${version}.tar.gz wallshow-${version}

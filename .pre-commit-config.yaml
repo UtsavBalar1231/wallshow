@@ -24,7 +24,7 @@ repos:
       - id: shfmt
         name: Format shell scripts with shfmt
         args:
-          - --diff # Show diff instead of modifying (use --write to auto-fix)
+          - --write  # Auto-fix files
         types: [shell]
         files: \.(sh|bash)$|^bin/wallshow$
   # Secret scanning with gitleaks
