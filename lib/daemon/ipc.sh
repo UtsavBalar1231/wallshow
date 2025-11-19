@@ -107,10 +107,16 @@ handle_socket_command() {
 		;;
 	"stop")
 		log_info "Received command: stop"
-		if update_state_atomic '.status = "stopping"'; then
-			echo "OK: Stopping"
+		local daemon_pid
+		daemon_pid=$(read_state '.processes.main_pid // null')
+		if [[ "${daemon_pid}" != "null" && -n "${daemon_pid}" && "${daemon_pid}" =~ ^[0-9]+$ ]] && kill -0 "${daemon_pid}" 2>/dev/null; then
+			if kill -TERM "${daemon_pid}" 2>/dev/null; then
+				echo "OK: Stopping"
+			else
+				echo "ERROR: Failed to send stop signal"
+			fi
 		else
-			echo "ERROR: Failed to initiate stop"
+			echo "ERROR: Daemon not running"
 		fi
 		;;
 	*)

@@ -210,7 +210,7 @@ main_loop() {
 		fi
 
 		# Sleep for a bit
-		sleep 5
+		sleep 1
 	done
 
 	log_info "Main loop ended"

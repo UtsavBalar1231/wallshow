@@ -96,7 +96,24 @@ main() {
 		;;
 	restart)
 		"${SCRIPT_PATH}" stop
-		sleep 2
+
+		# Wait for daemon to exit (max 10 seconds)
+		log_info "Waiting for daemon to exit..."
+		local max_attempts=20
+		local attempt=0
+		while ((attempt < max_attempts)); do
+			if ! check_instance; then
+				log_info "Daemon stopped after $((attempt * 500))ms"
+				break
+			fi
+			sleep 0.5
+			attempt=$((attempt + 1))
+		done
+
+		if ((attempt >= max_attempts)); then
+			die "Daemon failed to stop within 10 seconds" "${E_GENERAL}"
+		fi
+
 		"${SCRIPT_PATH}" start
 		;;
 	daemon)
