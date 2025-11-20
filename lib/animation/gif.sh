@@ -119,6 +119,9 @@ handle_animated_wallpaper() {
 			eval "exec ${LOCK_FD}>&-" 2>/dev/null || true
 		fi
 
+		# Set trap to clean PID on ANY exit (crash, normal, error)
+		trap 'update_state_atomic ".processes.animation_pid = null" 2>/dev/null || true' EXIT
+
 		animate_gif_frames "${gifs_cache}" "${frame_delay}"
 	) &
 

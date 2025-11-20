@@ -42,7 +42,7 @@ set_wallpaper_swww() {
 	# Ensure daemon is running
 	if ! pgrep -x "swww-daemon" &>/dev/null; then
 		log_debug "Starting swww-daemon"
-		swww-daemon --format xrgb &
+		swww-daemon --format argb &
 		local swww_pid=$!
 		update_state_atomic ".processes.swww_daemon_pid = ${swww_pid}" || log_warn "Failed to store swww-daemon PID"
 		log_debug "Started swww-daemon with PID: ${swww_pid}"

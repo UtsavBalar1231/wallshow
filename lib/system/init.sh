@@ -25,15 +25,8 @@ init_directories() {
 cleanup_all_processes() {
 	log_debug "Cleaning up all child processes..."
 
-	# Stop animation subprocess
-	local animation_pid
-	animation_pid=$(read_state '.processes.animation_pid // null')
-	if [[ "${animation_pid}" != "null" && -n "${animation_pid}" && "${animation_pid}" =~ ^[0-9]+$ ]] && kill -0 "${animation_pid}" 2>/dev/null; then
-		log_debug "Cleaning up animation process (PID: ${animation_pid})"
-		kill -TERM "${animation_pid}" 2>/dev/null || true
-		sleep 0.2
-		kill -KILL "${animation_pid}" 2>/dev/null || true
-	fi
+	# Stop animation subprocess using stop_animation helper
+	stop_animation "cleanup"
 
 	# Stop swaybg processes
 	local swaybg_pids

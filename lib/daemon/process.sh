@@ -9,6 +9,16 @@
 daemonize() {
 	log_info "Starting in daemon mode..."
 
+	# Clean up stale runtime files from previous crashes
+	# (EXIT trap doesn't fire on SIGKILL)
+	if [[ -e "${SOCKET_FILE}" || -e "${PID_FILE}" || -e "${RUNTIME_DIR}/daemon.ready" ]]; then
+		# Verify no daemon is actually running
+		if ! check_instance; then
+			log_info "Cleaning up stale runtime files from previous crash"
+			rm -f "${SOCKET_FILE}" "${PID_FILE}" "${RUNTIME_DIR}/daemon.ready" 2>/dev/null || true
+		fi
+	fi
+
 	# Pre-flight check: verify no instance already running
 	if check_instance; then
 		die "Daemon already running" "${E_LOCKED}"
@@ -41,7 +51,12 @@ daemonize() {
 			touch "${RUNTIME_DIR}/daemon.ready"
 
 			# Update state with daemon PID and starting status
-			update_state_atomic '.processes.main_pid = '"${BASHPID}"' | .status = "starting"' || log_warn "Failed to store main daemon PID in state"
+			# CRITICAL: PID storage failure makes daemon uncontrollable - must be fatal
+			if ! update_state_atomic '.processes.main_pid = '"${BASHPID}"' | .status = "starting"'; then
+				log_error "FATAL: Failed to store daemon PID in state - daemon would be uncontrollable"
+				cleanup
+				exit "${E_GENERAL}"
+			fi
 
 			log_info "Daemon process started (PID: ${BASHPID})"
 

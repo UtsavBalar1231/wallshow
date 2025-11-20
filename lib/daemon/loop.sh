@@ -92,7 +92,7 @@ change_wallpaper() {
 	use_animated=$(should_use_animated)
 
 	# Stop any running animation
-	stop_animation
+	stop_animation "wallpaper_change"
 
 	# Select new wallpaper
 	local wallpaper
@@ -145,10 +145,22 @@ main_loop() {
 	fi
 
 	# Update status (use atomic for consistency)
-	update_state_atomic '.status = "running"' || {
-		log_error "Failed to update status to running"
-		return 1
-	}
+	# Retry with state regeneration if needed (handles corrupted state files)
+	local retries=0
+	while ! update_state_atomic '.status = "running"'; do
+		retries=$((retries + 1))
+		if [[ ${retries} -ge 3 ]]; then
+			log_error "State file appears corrupted after 3 attempts, regenerating..."
+			init_state
+			if ! update_state_atomic '.status = "running"'; then
+				log_error "FATAL: Cannot update state even after regeneration"
+				return 1
+			fi
+			break
+		fi
+		log_warn "Failed to update status to running (attempt ${retries}/3), retrying..."
+		sleep 1
+	done
 
 	# Get change interval from config
 	local change_interval
@@ -164,6 +176,9 @@ main_loop() {
 	last_change=$(date +%s)
 	local last_cleanup
 	last_cleanup=$(date +%s)
+	# Track last PID validation time
+	local last_pid_check
+	last_pid_check=$(date +%s)
 
 	while true; do
 		# Check status
@@ -173,7 +188,7 @@ main_loop() {
 		case "${status}" in
 		"stopping" | "stopped")
 			log_info "Stopping main loop..."
-			stop_animation
+			stop_animation "status_change"
 			break
 			;;
 		"paused")
@@ -200,6 +215,19 @@ main_loop() {
 			else
 				log_error "Wallpaper change failed, will retry at next interval"
 			fi
+		fi
+
+		# Periodic validation of animation PID (every 60 seconds)
+		if [[ $((now - last_pid_check)) -ge 60 ]]; then
+			local animation_pid
+			animation_pid=$(read_state '.processes.animation_pid // null')
+			if [[ "${animation_pid}" != "null" && -n "${animation_pid}" ]]; then
+				if ! kill -0 "${animation_pid}" 2>/dev/null; then
+					log_warn "Animation PID ${animation_pid} not running, cleaning stale PID"
+					update_state_atomic '.processes.animation_pid = null'
+				fi
+			fi
+			last_pid_check=${now}
 		fi
 
 		# Periodic cache cleanup (every hour)

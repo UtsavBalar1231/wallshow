@@ -53,12 +53,21 @@ animate_gif_frames() {
 	# Animation loop
 	local frame_index=0
 	local status_check_counter=0
+	local consecutive_failures=0
 	while true; do
 		local current_frame="${frames[${frame_index}]}"
 
 		# Use transition_ms=0 for GIF frames (no transition between frames)
 		if set_wallpaper "${current_frame}" 0; then
 			log_debug "Displaying frame: ${frame_index}"
+			consecutive_failures=0
+		else
+			consecutive_failures=$((consecutive_failures + 1))
+			log_warn "Failed to set frame ${frame_index} (${consecutive_failures} consecutive failures)"
+			if [[ ${consecutive_failures} -ge 10 ]]; then
+				log_error "Animation failed 10 times consecutively, exiting"
+				return 1
+			fi
 		fi
 
 		# Check status every 10 frames instead of every frame (reduces overhead)
@@ -94,13 +103,14 @@ animate_gif_frames() {
 }
 
 stop_animation() {
+	local reason="${1:-manual}" # manual, status_change, wallpaper_change, cleanup
 	local animation_pid
 	animation_pid=$(read_state '.processes.animation_pid // null')
 
 	if [[ "${animation_pid}" != "null" && -n "${animation_pid}" && "${animation_pid}" =~ ^[0-9]+$ ]]; then
 		if kill -0 "${animation_pid}" 2>/dev/null; then
 			# Process is running, kill it
-			log_info "Stopping animation process (PID: ${animation_pid})"
+			log_info "Stopping animation process (PID: ${animation_pid}, reason: ${reason})"
 			kill -TERM "${animation_pid}" 2>/dev/null || true
 
 			# Wait up to 2 seconds for graceful exit

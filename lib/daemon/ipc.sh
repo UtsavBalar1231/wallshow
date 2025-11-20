@@ -42,7 +42,7 @@ handle_socket_command() {
 	"pause")
 		log_info "Received command: pause"
 		if update_state_atomic '.status = "paused"'; then
-			stop_animation
+			stop_animation "pause"
 			# Verify state was actually updated
 			local current_status
 			current_status=$(read_state '.status')
@@ -133,7 +133,7 @@ send_socket_command() {
 	local cmd="$1"
 
 	if [[ ! -e "${SOCKET_FILE}" ]]; then
-		log_error "Socket not found: ${SOCKET_FILE}"
+		log_error "Daemon not running (socket not found)"
 		return 1
 	fi
 

@@ -91,7 +91,7 @@ main() {
 		main_loop
 		;;
 	stop)
-		send_socket_command "stop" || die "Daemon not running. Nothing to stop." "${E_GENERAL}"
+		send_socket_command "stop" || die "Daemon not running" "${E_GENERAL}"
 		echo "Stopping wallpaper manager..."
 		;;
 	restart)
