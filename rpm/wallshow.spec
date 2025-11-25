@@ -12,6 +12,9 @@ BuildRequires:  bash
 BuildRequires:  jq
 BuildRequires:  socat
 
+# Define systemd user unit directory
+%define _userunitdir %{_prefix}/lib/systemd/user
+
 Requires:       bash >= 5.0
 Requires:       jq
 Requires:       socat
@@ -74,7 +77,7 @@ install -Dm644 LICENSE %{buildroot}%{_datadir}/licenses/%{name}/LICENSE
 systemctl --global daemon-reload 2>/dev/null || true
 
 %changelog
-* Fri Nov 15 2025 UtsavBalar1231 <utsavbalar1231@gmail.com> - 1.0.0-1
+* Sat Nov 15 2025 UtsavBalar1231 <utsavbalar1231@gmail.com> - 1.0.0-1
 - Initial release
 - Modular architecture with feature-based organization
 - Support for static and animated (GIF) wallpapers

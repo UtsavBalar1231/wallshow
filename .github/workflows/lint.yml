@@ -54,13 +54,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install yamllint
+        run: pip install --break-system-packages yamllint
+
       - name: Validate YAML files
-        uses: ibiqlik/action-yamllint@v3
-        with:
-          config_file: .yamllint.yml
-          strict: true
-          no_warnings: false
-        continue-on-error: true
+        run: yamllint -c .yamllint.yml .
 
   validate-packaging:
     name: Validate Packaging Metadata

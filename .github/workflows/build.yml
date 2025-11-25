@@ -23,7 +23,8 @@ jobs:
             bash \
             jq \
             socat \
-            git
+            git \
+            nodejs
 
       - name: Checkout code
         uses: actions/checkout@v4
@@ -60,21 +61,23 @@ jobs:
             bash \
             jq \
             socat \
-            git
+            git \
+            nodejs
 
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Create source tarball for Arch build
+      - name: Prepare local source for Arch build
         run: |
-          version=1.0.0
-          mkdir -p pkg/src
-          tar czf pkg/wallshow-${version}.tar.gz \
+          version=$(grep '^pkgver=' pkg/PKGBUILD | cut -d'=' -f2)
+          tar czf "pkg/wallshow-${version}.tar.gz" \
             --transform "s,^,wallshow-${version}/," \
             bin lib logrotate.d systemd LICENSE README.md CONTRIBUTING.md
-          mv pkg/wallshow-${version}.tar.gz pkg/src/
+          # Patch PKGBUILD to use local source (double quotes for variable expansion)
+          sed -i "s|^source=.*|source=(\"wallshow-\${pkgver}.tar.gz\")|" pkg/PKGBUILD
+          sed -i "s|^sha256sums=.*|sha256sums=('SKIP')|" pkg/PKGBUILD
 
       - name: Create build user (makepkg can't run as root)
         run: |
@@ -109,7 +112,8 @@ jobs:
             bash \
             jq \
             socat \
-            git
+            git \
+            nodejs
 
       - name: Checkout code
         uses: actions/checkout@v4

@@ -9,132 +9,163 @@ permissions:
   contents: write
 
 jobs:
-  create-release:
-    name: Create GitHub Release
+  build-debian:
+    name: Build Debian Package
     runs-on: ubuntu-latest
+    container:
+      image: debian:bookworm
     outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-      version: ${{ steps.get_version.outputs.version }}
+      version: ${{ steps.version.outputs.version }}
     steps:
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y \
+            debhelper \
+            devscripts \
+            build-essential \
+            bash \
+            jq \
+            socat \
+            git \
+            nodejs
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Get version from tag
-        id: get_version
+        id: version
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "Release version: ${VERSION}"
 
-      - name: Extract changelog for this version
-        id: changelog
-        run: |
-          VERSION=${{ steps.get_version.outputs.version }}
-          # Extract changelog from debian/changelog for this version
-          if [ -f debian/changelog ]; then
-            awk "/^wallshow \(${VERSION}/ {flag=1; next} /^wallshow \(/ {flag=0} flag" debian/changelog > /tmp/release_notes.txt
-          else
-            echo "Release ${VERSION}" > /tmp/release_notes.txt
-          fi
+      - name: Build Debian package
+        run: dpkg-buildpackage -us -uc -b
 
-          # Fallback to git tag annotation if changelog is empty
-          if [ ! -s /tmp/release_notes.txt ]; then
-            git tag -l --format='%(contents)' "v${VERSION}" > /tmp/release_notes.txt
-          fi
+      - name: Move package to workspace
+        run: mv ../*.deb ./
 
-          # If still empty, use git log
-          if [ ! -s /tmp/release_notes.txt ]; then
-            echo "Changes in this release:" > /tmp/release_notes.txt
-            git log --pretty=format:"- %s" $(git describe --tags --abbrev=0 HEAD^)..HEAD >> /tmp/release_notes.txt
-          fi
-
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ github.ref }}
-          release_name: wallshow ${{ steps.get_version.outputs.version }}
-          body_path: /tmp/release_notes.txt
-          draft: false
-          prerelease: false
+          name: debian-package
+          path: "*.deb"
 
-  build-and-upload:
-    name: Build and Upload Release Assets
-    needs: create-release
+  build-arch:
+    name: Build Arch Package
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - name: debian
-            container: debian:bookworm
-            build_script: |
-              apt-get update
-              apt-get install -y debhelper devscripts build-essential bash jq socat git
-              dpkg-buildpackage -us -uc -b
-              mv ../*.deb ./wallshow_${{ needs.create-release.outputs.version }}_all.deb
-            artifact: wallshow_${{ needs.create-release.outputs.version }}_all.deb
-            content_type: application/vnd.debian.binary-package
-
-          - name: arch
-            container: archlinux:latest
-            build_script: |
-              pacman -Syu --noconfirm
-              pacman -S --noconfirm base-devel bash jq socat git
-              useradd -m builder
-              chown -R builder:builder .
-              echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
-              cd pkg
-              su builder -c "makepkg -sf --noconfirm"
-              mv *.pkg.tar.zst ../wallshow-${{ needs.create-release.outputs.version }}-1-any.pkg.tar.zst
-            artifact: wallshow-${{ needs.create-release.outputs.version }}-1-any.pkg.tar.zst
-            content_type: application/zstd
-
-          - name: rpm
-            container: fedora:latest
-            build_script: |
-              dnf install -y rpm-build rpmdevtools bash jq socat git
-              rpmdev-setuptree
-              version=${{ needs.create-release.outputs.version }}
-              mkdir -p wallshow-${version}
-              cp -r bin lib logrotate.d systemd LICENSE README.md CONTRIBUTING.md wallshow-${version}/
-              tar czf ~/rpmbuild/SOURCES/wallshow-${version}.tar.gz wallshow-${version}
-              rpmbuild -ba rpm/wallshow.spec
-              mv ~/rpmbuild/RPMS/noarch/*.rpm ./wallshow-${{ needs.create-release.outputs.version }}-1.noarch.rpm
-            artifact: wallshow-${{ needs.create-release.outputs.version }}-1.noarch.rpm
-            content_type: application/x-rpm
-
+    container:
+      image: archlinux:latest
     steps:
+      - name: Install build dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm \
+            base-devel \
+            bash \
+            jq \
+            socat \
+            git \
+            nodejs
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Build in container
+      - name: Prepare local source
         run: |
-          docker run --rm -v $PWD:/workspace -w /workspace ${{ matrix.container }} bash -c "${{ matrix.build_script }}"
+          version=$(grep '^pkgver=' pkg/PKGBUILD | cut -d'=' -f2)
+          tar czf "pkg/wallshow-${version}.tar.gz" \
+            --transform "s,^,wallshow-${version}/," \
+            bin lib logrotate.d systemd LICENSE README.md CONTRIBUTING.md
+          sed -i "s|^source=.*|source=(\"wallshow-\${pkgver}.tar.gz\")|" pkg/PKGBUILD
+          sed -i "s|^sha256sums=.*|sha256sums=('SKIP')|" pkg/PKGBUILD
 
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create build user
+        run: |
+          useradd -m builder
+          chown -R builder:builder .
+          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+      - name: Build Arch package
+        run: |
+          cd pkg
+          su builder -c "makepkg -sf --noconfirm"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ./${{ matrix.artifact }}
-          asset_name: ${{ matrix.artifact }}
-          asset_content_type: ${{ matrix.content_type }}
+          name: arch-package
+          path: pkg/*.pkg.tar.zst
 
-  verify-release:
-    name: Verify Release Assets
-    needs: build-and-upload
+  build-rpm:
+    name: Build RPM Package
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:latest
+    steps:
+      - name: Install build dependencies
+        run: |
+          dnf install -y \
+            rpm-build \
+            rpmdevtools \
+            bash \
+            jq \
+            socat \
+            git \
+            nodejs
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup and build RPM
+        run: |
+          rpmdev-setuptree
+          version=$(grep '^Version:' rpm/wallshow.spec | awk '{print $2}')
+          mkdir -p wallshow-${version}
+          cp -r bin lib logrotate.d systemd LICENSE README.md CONTRIBUTING.md wallshow-${version}/
+          tar czf ~/rpmbuild/SOURCES/wallshow-${version}.tar.gz wallshow-${version}
+          rpmbuild -ba rpm/wallshow.spec
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-package
+          path: ~/rpmbuild/RPMS/noarch/*.rpm
+
+  create-release:
+    name: Create GitHub Release
+    needs: [build-debian, build-arch, build-rpm]
     runs-on: ubuntu-latest
     steps:
-      - name: Check release exists
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: packages
+
+      - name: Extract changelog
         run: |
-          echo "Release created successfully with all packages"
-          echo "Debian package: ✓"
-          echo "Arch package: ✓"
-          echo "RPM package: ✓"
+          VERSION=${{ needs.build-debian.outputs.version }}
+          if [ -f debian/changelog ]; then
+            awk "/^wallshow \(${VERSION}/ {flag=1; next} /^wallshow \(/ {flag=0} flag" debian/changelog > release_notes.txt
+          fi
+          if [ ! -s release_notes.txt ]; then
+            echo "Release ${VERSION}" > release_notes.txt
+          fi
+
+      - name: Create release with assets
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release_notes.txt
+          files: |
+            packages/debian-package/*.deb
+            packages/arch-package/*.pkg.tar.zst
+            packages/rpm-package/*.rpm
