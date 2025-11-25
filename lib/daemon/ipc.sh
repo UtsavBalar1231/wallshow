@@ -43,12 +43,7 @@ _ipc_cmd_resume() {
 }
 
 _ipc_cmd_status() {
-	local status
-	if status=$(read_state '.'); then
-		echo "${status}"
-	else
-		echo "ERROR: Failed to read status"
-	fi
+	show_status
 }
 
 _ipc_cmd_reload() {

@@ -132,9 +132,9 @@ main() {
 		;;
 	status)
 		if ! send_socket_command "status" 2>/dev/null; then
-			# Daemon not running, read state from file directly
+			# Daemon not running, show status from state file directly
 			if [[ -f "${STATE_FILE}" ]]; then
-				read_state '.'
+				show_status
 			else
 				die "State file not found. Run 'wallshow daemon' first." "${E_GENERAL}"
 			fi

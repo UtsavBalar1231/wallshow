@@ -105,6 +105,74 @@ show_info() {
 	fi
 }
 
+show_status() {
+	local status current_wallpaper changes_count last_change
+	local animation_pid main_pid cache_static cache_animated
+
+	status=$(read_state '.status // "stopped"')
+	current_wallpaper=$(read_state '.current_wallpaper // "none"')
+	changes_count=$(read_state '.stats.changes_count // 0')
+	last_change=$(read_state '.stats.last_change // "never"')
+	main_pid=$(read_state '.processes.main_pid // null')
+	animation_pid=$(read_state '.processes.animation_pid // null')
+	cache_static=$(read_state '.cache.static.count // 0')
+	cache_animated=$(read_state '.cache.animated.count // 0')
+
+	# Status line with color
+	local status_color=""
+	case "${status}" in
+	running) status_color="\033[32m" ;; # green
+	paused) status_color="\033[33m" ;;  # yellow
+	*) status_color="\033[31m" ;;       # red
+	esac
+	printf "Status:     ${status_color}%s\033[0m" "${status}"
+	[[ "${main_pid}" != "null" ]] && printf " (PID %s)" "${main_pid}"
+	echo
+
+	# Uptime (calculate from PID start time)
+	if [[ "${main_pid}" != "null" ]] && kill -0 "${main_pid}" 2>/dev/null; then
+		local uptime_str
+		uptime_str=$(ps -o etime= -p "${main_pid}" 2>/dev/null | tr -d ' ')
+		[[ -n "${uptime_str}" ]] && printf "Uptime:     %s\n" "${uptime_str}"
+	fi
+
+	# Current wallpaper (basename only for readability)
+	local wallpaper_name
+	wallpaper_name=$(basename "${current_wallpaper}" 2>/dev/null || echo "none")
+	printf "Wallpaper:  %s\n" "${wallpaper_name}"
+
+	# Animation status
+	if [[ "${animation_pid}" != "null" && -n "${animation_pid}" ]]; then
+		printf "Animation:  running (PID %s)\n" "${animation_pid}"
+	fi
+
+	# Stats
+	printf "Changed:    %s times\n" "${changes_count}"
+	printf "Last:       %s\n" "${last_change}"
+
+	# Display server and tool
+	local display_server tool_info
+	display_server=$(detect_display_server)
+	tool_info=$(get_config '.tools.preferred_static' 'auto')
+	printf "Server:     %s (tool: %s)\n" "${display_server}" "${tool_info}"
+
+	# Battery status
+	local battery_opt battery_status
+	battery_opt=$(get_config '.behavior.battery_optimization' 'true')
+	if [[ "${battery_opt}" == "true" ]]; then
+		battery_status=$(get_battery_status 2>/dev/null || echo "unknown")
+		printf "Battery:    %s\n" "${battery_status}"
+	fi
+
+	# Interval
+	local interval
+	interval=$(get_config '.intervals.change_seconds' '300')
+	printf "Interval:   %ss\n" "${interval}"
+
+	# Cache summary
+	printf "Cache:      %s static, %s animated\n" "${cache_static}" "${cache_animated}"
+}
+
 # ============================================================================
 # DIAGNOSTICS CHECKS (extracted for testability)
 # ============================================================================
