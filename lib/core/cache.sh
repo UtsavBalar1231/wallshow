@@ -137,7 +137,7 @@ invalidate_tools_cache() {
 
 declare -g _BATTERY_CACHE_VALUE=""
 declare -g _BATTERY_CACHE_TIMESTAMP=0
-declare -ri _BATTERY_CACHE_TTL=30 # 30 seconds
+declare -gri _BATTERY_CACHE_TTL=30 # 30 seconds
 
 # Get battery status with TTL caching
 get_battery_status_cached() {

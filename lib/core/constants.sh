@@ -7,43 +7,43 @@
 # METADATA
 # ============================================================================
 
-declare -r SCRIPT_NAME="wallshow"
-declare -r VERSION="1.0.0"
+declare -gr SCRIPT_NAME="wallshow"
+declare -gr VERSION="1.0.0"
 
 # ============================================================================
 # XDG BASE DIRECTORY COMPLIANCE
 # ============================================================================
 
-declare -r XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}"
-declare -r XDG_STATE_HOME="${XDG_STATE_HOME:-${HOME}/.local/state}"
-declare -r XDG_CACHE_HOME="${XDG_CACHE_HOME:-${HOME}/.cache}"
-declare -r XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+declare -gr XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}"
+declare -gr XDG_STATE_HOME="${XDG_STATE_HOME:-${HOME}/.local/state}"
+declare -gr XDG_CACHE_HOME="${XDG_CACHE_HOME:-${HOME}/.cache}"
+declare -gr XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 
 # ============================================================================
 # APPLICATION DIRECTORIES
 # ============================================================================
 
-declare -r CONFIG_DIR="${XDG_CONFIG_HOME}/${SCRIPT_NAME}"
-declare -r STATE_DIR="${XDG_STATE_HOME}/${SCRIPT_NAME}"
-declare -r CACHE_DIR="${XDG_CACHE_HOME}/${SCRIPT_NAME}"
-declare -r RUNTIME_DIR="${XDG_RUNTIME_DIR}/${SCRIPT_NAME}"
+declare -gr CONFIG_DIR="${XDG_CONFIG_HOME}/${SCRIPT_NAME}"
+declare -gr STATE_DIR="${XDG_STATE_HOME}/${SCRIPT_NAME}"
+declare -gr CACHE_DIR="${XDG_CACHE_HOME}/${SCRIPT_NAME}"
+declare -gr RUNTIME_DIR="${XDG_RUNTIME_DIR}/${SCRIPT_NAME}"
 
 # ============================================================================
 # CRITICAL FILES
 # ============================================================================
 
 declare -g CONFIG_FILE="${CONFIG_DIR}/config.json"
-declare -r STATE_FILE="${STATE_DIR}/state.json"
-declare -r LOCK_FILE="${RUNTIME_DIR}/instance.lock"
-declare -r SOCKET_FILE="${RUNTIME_DIR}/control.sock"
-declare -r PID_FILE="${RUNTIME_DIR}/daemon.pid"
-declare -r LOG_FILE="${STATE_DIR}/wallpaper.log"
+declare -gr STATE_FILE="${STATE_DIR}/state.json"
+declare -gr LOCK_FILE="${RUNTIME_DIR}/instance.lock"
+declare -gr SOCKET_FILE="${RUNTIME_DIR}/control.sock"
+declare -gr PID_FILE="${RUNTIME_DIR}/daemon.pid"
+declare -gr LOG_FILE="${STATE_DIR}/wallpaper.log"
 
 # ============================================================================
 # DEFAULT CONFIGURATION
 # ============================================================================
 
-declare -r DEFAULT_CONFIG='{
+declare -gr DEFAULT_CONFIG='{
   "wallpaper_dirs": {
     "static": "~/Pictures/wallpapers",
     "animated": "~/Pictures/wallpapers/animated"
@@ -72,54 +72,54 @@ declare -r DEFAULT_CONFIG='{
 # RETRY LIMITS
 # ============================================================================
 
-declare -ri RETRY_STATE_UPDATE=5
-declare -ri RETRY_WALLPAPER_SELECT=10
-declare -ri RETRY_STATUS_UPDATE=3
-declare -ri RETRY_ANIMATION_FAILURES=10
+declare -gri RETRY_STATE_UPDATE=5
+declare -gri RETRY_WALLPAPER_SELECT=10
+declare -gri RETRY_STATUS_UPDATE=3
+declare -gri RETRY_ANIMATION_FAILURES=10
 
 # ============================================================================
 # INTERVALS (seconds unless noted)
 # ============================================================================
 
-declare -ri INTERVAL_CACHE_REFRESH=3600
-declare -ri INTERVAL_CACHE_CLEANUP=3600
-declare -ri INTERVAL_PID_CHECK=60
-declare -ri INTERVAL_GRACEFUL_EXIT_DS=20 # deciseconds (2 seconds)
+declare -gri INTERVAL_CACHE_REFRESH=3600
+declare -gri INTERVAL_CACHE_CLEANUP=3600
+declare -gri INTERVAL_PID_CHECK=60
+declare -gri INTERVAL_GRACEFUL_EXIT_DS=20 # deciseconds (2 seconds)
 
 # ============================================================================
 # LIMITS
 # ============================================================================
 
-declare -ri LIMIT_HISTORY_ENTRIES=100
-declare -ri LIMIT_MIN_FRAME_DELAY_MS=10
-declare -ri LIMIT_COMMAND_LOCK_TIMEOUT=30
-declare -ri LIMIT_STATE_LOCK_TIMEOUT=5
+declare -gri LIMIT_HISTORY_ENTRIES=100
+declare -gri LIMIT_MIN_FRAME_DELAY_MS=10
+declare -gri LIMIT_COMMAND_LOCK_TIMEOUT=30
+declare -gri LIMIT_STATE_LOCK_TIMEOUT=5
 
 # ============================================================================
 # SUPPORTED TOOLS
 # ============================================================================
 
-declare -ra WALLPAPER_TOOLS=("swww" "swaybg" "hyprpaper" "mpvpaper" "feh" "xwallpaper" "nitrogen")
+declare -gra WALLPAPER_TOOLS=("swww" "swaybg" "hyprpaper" "mpvpaper" "feh" "xwallpaper" "nitrogen")
 
 # ============================================================================
 # EXIT CODES
 # ============================================================================
 
-declare -ri E_SUCCESS=0
-declare -ri E_GENERAL=1
-declare -ri E_USAGE=2
-declare -ri E_NOPERM=3
-declare -ri E_LOCKED=5
-declare -ri E_DEPENDENCY=8
+declare -gri E_SUCCESS=0
+declare -gri E_GENERAL=1
+declare -gri E_USAGE=2
+declare -gri E_NOPERM=3
+declare -gri E_LOCKED=5
+declare -gri E_DEPENDENCY=8
 
 # ============================================================================
 # LOGGING LEVELS
 # ============================================================================
 
-declare -ri LOG_ERROR=0
-declare -ri LOG_WARN=1
-declare -ri LOG_INFO=2
-declare -ri LOG_DEBUG=3
+declare -gri LOG_ERROR=0
+declare -gri LOG_WARN=1
+declare -gri LOG_INFO=2
+declare -gri LOG_DEBUG=3
 
 # ============================================================================
 # GLOBAL STATE VARIABLES
