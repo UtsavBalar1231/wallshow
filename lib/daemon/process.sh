@@ -3,6 +3,28 @@
 # Part of wallshow - Professional Wallpaper Manager for Wayland/X11
 
 # ============================================================================
+# IN-MEMORY STATUS (Signal-based IPC)
+# ============================================================================
+
+# Daemon status - checked by main loop (no jq calls!)
+declare -g DAEMON_STATUS="stopped"
+
+# Signal request flags - set by signal handlers, processed by main loop
+declare -g PAUSE_REQUESTED=false
+declare -g RESUME_REQUESTED=false
+declare -g STOP_REQUESTED=false
+
+# Status file for animation subprocess (lightweight alternative to JSON)
+declare -g DAEMON_STATUS_FILE=""
+
+# Write status to lightweight file (for animation subprocess)
+write_status_file() {
+	if [[ -n "${DAEMON_STATUS_FILE}" ]]; then
+		echo "${DAEMON_STATUS}" >"${DAEMON_STATUS_FILE}"
+	fi
+}
+
+# ============================================================================
 # PROCESS MANAGEMENT
 # ============================================================================
 
@@ -60,13 +82,24 @@ daemonize() {
 
 			log_info "Daemon process started (PID: ${BASHPID})"
 
+			# Initialize caches (MUST be in main shell context, not in subshell)
+			init_caches
+
+			# Initialize status file for animation subprocess
+			DAEMON_STATUS_FILE="${RUNTIME_DIR}/daemon_status"
+			DAEMON_STATUS="running"
+			write_status_file
+
 			# Create IPC socket AFTER acquiring lock (security: only daemon can create socket)
 			create_socket
 
-			# Set up signal handlers
+			# Set up signal handlers (SIGUSR1/USR2 for pause/resume - minimal handlers!)
 			trap 'handle_signal TERM' TERM
 			trap 'handle_signal INT' INT
 			trap 'handle_signal HUP' HUP
+			trap 'handle_signal USR1' USR1
+			trap 'handle_signal USR2' USR2
+			trap '' PIPE # Ignore SIGPIPE (broken socket connections)
 			trap 'cleanup' EXIT
 
 			# Run main loop
@@ -93,17 +126,29 @@ handle_signal() {
 
 	case "${signal}" in
 	TERM | INT)
-		log_info "Shutting down gracefully..."
-		update_state_atomic '.status = "stopping"'
-		cleanup
-		exit 0
+		# Just set flag - main loop handles cleanup
+		STOP_REQUESTED=true
 		;;
 	HUP)
 		log_info "Reloading configuration..."
+		invalidate_all_caches
 		reload_config
+		;;
+	USR1)
+		# Pause request - just set flag, main loop does heavy work
+		PAUSE_REQUESTED=true
+		;;
+	USR2)
+		# Resume request - just set flag, main loop does heavy work
+		RESUME_REQUESTED=true
 		;;
 	*)
 		log_warn "Unhandled signal: ${signal}"
 		;;
 	esac
 }
+
+# Minimal signal handlers (CRITICAL: only set flags, no I/O!)
+handle_pause() { PAUSE_REQUESTED=true; }
+handle_resume() { RESUME_REQUESTED=true; }
+handle_stop() { STOP_REQUESTED=true; }

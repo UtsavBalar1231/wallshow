@@ -114,7 +114,7 @@ main() {
 			die "Daemon failed to stop within 10 seconds" "${E_GENERAL}"
 		fi
 
-		"${SCRIPT_PATH}" start
+		"${SCRIPT_PATH}" daemon
 		;;
 	daemon)
 		# Cleanup trap is set inside daemon child process
@@ -142,6 +142,9 @@ main() {
 		;;
 	info)
 		show_info
+		;;
+	diagnose)
+		diagnose_issues
 		;;
 	list)
 		list_wallpapers

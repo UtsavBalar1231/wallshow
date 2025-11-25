@@ -29,34 +29,49 @@ fi
 # SOURCE MODULES IN DEPENDENCY ORDER
 # ============================================================================
 
+# Helper to source with error checking
+_source_module() {
+	local module="$1"
+	if [[ ! -f "${module}" ]]; then
+		echo "ERROR: Module not found: ${module}" >&2
+		exit 1
+	fi
+	# shellcheck source=/dev/null
+	source "${module}" || {
+		echo "ERROR: Failed to load module: ${module}" >&2
+		exit 1
+	}
+}
+
 # Core modules
-source "${WALLSHOW_LIB}/core/constants.sh"
-source "${WALLSHOW_LIB}/core/logging.sh"
-source "${WALLSHOW_LIB}/core/state.sh"
-source "${WALLSHOW_LIB}/core/config.sh"
+_source_module "${WALLSHOW_LIB}/core/constants.sh"
+_source_module "${WALLSHOW_LIB}/core/logging.sh"
+_source_module "${WALLSHOW_LIB}/core/cache.sh"
+_source_module "${WALLSHOW_LIB}/core/state.sh"
+_source_module "${WALLSHOW_LIB}/core/config.sh"
 
 # System modules (depend on core)
-source "${WALLSHOW_LIB}/system/paths.sh"
-source "${WALLSHOW_LIB}/system/locking.sh"
-source "${WALLSHOW_LIB}/system/init.sh"
+_source_module "${WALLSHOW_LIB}/system/paths.sh"
+_source_module "${WALLSHOW_LIB}/system/locking.sh"
+_source_module "${WALLSHOW_LIB}/system/init.sh"
 
 # Wallpaper modules (depend on system)
-source "${WALLSHOW_LIB}/wallpaper/discovery.sh"
-source "${WALLSHOW_LIB}/wallpaper/selection.sh"
-source "${WALLSHOW_LIB}/wallpaper/backends.sh"
+_source_module "${WALLSHOW_LIB}/wallpaper/discovery.sh"
+_source_module "${WALLSHOW_LIB}/wallpaper/selection.sh"
+_source_module "${WALLSHOW_LIB}/wallpaper/backends.sh"
 
 # Animation modules (depend on wallpaper)
-source "${WALLSHOW_LIB}/animation/gif.sh"
-source "${WALLSHOW_LIB}/animation/playback.sh"
+_source_module "${WALLSHOW_LIB}/animation/gif.sh"
+_source_module "${WALLSHOW_LIB}/animation/playback.sh"
 
 # Daemon modules (depend on animation)
-source "${WALLSHOW_LIB}/daemon/process.sh"
-source "${WALLSHOW_LIB}/daemon/ipc.sh"
-source "${WALLSHOW_LIB}/daemon/loop.sh"
+_source_module "${WALLSHOW_LIB}/daemon/process.sh"
+_source_module "${WALLSHOW_LIB}/daemon/ipc.sh"
+_source_module "${WALLSHOW_LIB}/daemon/loop.sh"
 
 # CLI modules (depend on daemon)
-source "${WALLSHOW_LIB}/cli/interface.sh"
-source "${WALLSHOW_LIB}/cli/commands.sh"
+_source_module "${WALLSHOW_LIB}/cli/interface.sh"
+_source_module "${WALLSHOW_LIB}/cli/commands.sh"
 
 # ============================================================================
 # MAIN ENTRY POINT

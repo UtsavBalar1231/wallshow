@@ -3,6 +3,107 @@
 # Part of wallshow - Professional Wallpaper Manager for Wayland/X11
 
 # ============================================================================
+# DISCOVERY HELPERS
+# ============================================================================
+
+# Check if cached wallpaper list is still valid
+# Returns: 0 if cache hit (outputs cached list), 1 if cache miss
+_check_wallpaper_cache() {
+	local cache_key="$1"
+	local force_refresh="$2"
+
+	if [[ "${force_refresh}" == "true" ]]; then
+		return 1
+	fi
+
+	local cached_list last_scan cache_result
+	cache_result=$(jq -r "[(.cache.${cache_key}.files // []), (.cache.${cache_key}.last_scan // 0)] | @tsv" "${STATE_FILE}" 2>/dev/null) || cache_result=$'[]\t0'
+	IFS=$'\t' read -r cached_list last_scan <<<"${cache_result}"
+
+	local now
+	printf -v now '%(%s)T' -1
+	local cache_age=$((now - last_scan))
+
+	if [[ "${cache_age}" -lt "${INTERVAL_CACHE_REFRESH}" && "${cached_list}" != "[]" ]]; then
+		log_debug "Using cached wallpaper list for ${cache_key}"
+		echo "${cached_list}"
+		return 0
+	fi
+
+	return 1
+}
+
+# Build find exclude arguments from config patterns
+# Returns: exclude args via nameref
+_build_exclude_args() {
+	local -n _exclude_ref=$1
+
+	_exclude_ref=()
+	local exclude_patterns
+	exclude_patterns=$(jq -r '.behavior.exclude_patterns[]?' "${CONFIG_FILE}" 2>/dev/null || echo "")
+
+	if [[ -n "${exclude_patterns}" ]]; then
+		while IFS= read -r pattern; do
+			if [[ -n "${pattern}" ]]; then
+				# Validate pattern for security (safe shell glob only)
+				if [[ "${pattern}" =~ ^[a-zA-Z0-9.*_-]+$ ]]; then
+					_exclude_ref+=("!" "-name" "${pattern}")
+				else
+					log_warn "Skipping invalid exclude pattern (security): ${pattern}"
+				fi
+			fi
+		done <<<"${exclude_patterns}"
+	fi
+}
+
+# Scan directory for wallpaper files
+# Returns: JSON array of file paths
+_scan_wallpaper_directory() {
+	local dir="$1"
+	local -a exclude_args=()
+	_build_exclude_args exclude_args
+
+	local -a file_array=()
+	local count=0
+
+	local find_errors
+	if ! find_errors=$(mktemp); then
+		log_error "Failed to create temp file for find errors"
+		echo "[]"
+		return 1
+	fi
+
+	local find_output
+	if find_output=$(find "${dir}" -type f \( \
+		-iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" \
+		-o -iname "*.webp" -o -iname "*.gif" -o -iname "*.bmp" \
+		\) "${exclude_args[@]}" 2>"${find_errors}"); then
+		while IFS= read -r file; do
+			[[ -z "${file}" ]] && continue
+			file_array+=("${file}")
+			count=$((count + 1))
+		done <<<"${find_output}"
+	fi
+
+	# Log permission errors
+	if [[ -s "${find_errors}" ]]; then
+		while IFS= read -r err_line; do
+			log_warn "find: ${err_line}"
+		done <"${find_errors}"
+	fi
+	rm -f "${find_errors}"
+
+	log_info "Found ${count} wallpapers in ${dir}"
+
+	# Convert to JSON
+	if [[ "${count}" -eq 0 ]]; then
+		echo "[]"
+	else
+		printf '%s\n' "${file_array[@]}" | jq -Rs 'split("\n") | map(select(length > 0))'
+	fi
+}
+
+# ============================================================================
 # WALLPAPER DISCOVERY & CACHING
 # ============================================================================
 
@@ -17,81 +118,23 @@ discover_wallpapers() {
 		return 1
 	}
 
-	# Check cache
-	local cached_list
-	local last_scan
-	cached_list=$(jq -r ".cache.${cache_key}.files // []" "${STATE_FILE}" 2>/dev/null || echo "[]")
-	last_scan=$(jq -r ".cache.${cache_key}.last_scan // 0" "${STATE_FILE}" 2>/dev/null || echo "0")
-
-	local now
-	now=$(date +%s)
-	local cache_age=$((now - last_scan))
-	local max_age=3600 # 1 hour
-
-	if [[ "${force_refresh}" == "false" && ${cache_age} -lt ${max_age} && "${cached_list}" != "[]" ]]; then
-		log_debug "Using cached wallpaper list for ${cache_key}"
-		echo "${cached_list}"
+	# Check cache first
+	if _check_wallpaper_cache "${cache_key}" "${force_refresh}"; then
 		return 0
 	fi
 
 	log_info "Scanning directory: ${dir}"
 
-	# Build exclude pattern arguments as an array
-	local -a exclude_args=()
-	local exclude_patterns
-	# Get exclude patterns as a JSON array then extract values
-	exclude_patterns=$(jq -r '.behavior.exclude_patterns[]?' "${CONFIG_FILE}" 2>/dev/null || echo "")
-
-	if [[ -n "${exclude_patterns}" ]]; then
-		while IFS= read -r pattern; do
-			if [[ -n "${pattern}" ]]; then
-				# Validate pattern contains only safe shell glob characters to prevent command injection
-				if [[ "${pattern}" =~ ^[a-zA-Z0-9.*_-]+$ ]]; then
-					exclude_args+=("!" "-name" "${pattern}")
-				else
-					log_warn "Skipping invalid exclude pattern (security): ${pattern}"
-				fi
-			fi
-		done <<<"${exclude_patterns}"
-	fi
-
-	# Execute find and build file array, then convert to JSON once (O(n) instead of O(n²))
-	local -a file_array=()
-	local count=0
-
-	# Find wallpaper files - log permission errors instead of suppressing
-	local find_errors
-	find_errors=$(mktemp)
-	if find_output=$(find "${dir}" -type f \( \
-		-iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" \
-		-o -iname "*.webp" -o -iname "*.gif" -o -iname "*.bmp" \
-		\) "${exclude_args[@]}" 2>"${find_errors}"); then
-		while IFS= read -r file; do
-			[[ -z "${file}" ]] && continue
-			file_array+=("${file}")
-			count=$((count + 1))
-		done <<<"${find_output}"
-	fi
-
-	# Log any permission or access errors from find
-	if [[ -s "${find_errors}" ]]; then
-		while IFS= read -r err_line; do
-			log_warn "find: ${err_line}"
-		done <"${find_errors}"
-	fi
-	rm -f "${find_errors}"
-
-	log_info "Found ${count} wallpapers in ${dir}"
-
-	# Convert file array to JSON in one operation
+	# Scan directory
 	local files_json
-	if [[ ${count} -eq 0 ]]; then
-		files_json="[]"
-	else
-		files_json=$(printf '%s\n' "${file_array[@]}" | jq -Rs 'split("\n") | map(select(length > 0))')
-	fi
+	files_json=$(_scan_wallpaper_directory "${dir}")
 
-	# Update cache (use atomic for consistency)
+	# Get current timestamp and count
+	local now count
+	printf -v now '%(%s)T' -1
+	count=$(echo "${files_json}" | jq 'length')
+
+	# Update cache
 	update_state_atomic ".cache.${cache_key} = {
         \"files\": ${files_json},
         \"last_scan\": ${now},

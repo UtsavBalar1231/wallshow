@@ -38,7 +38,8 @@ cleanup_all_processes() {
 	fi
 	if [[ -n "${swaybg_pids}" ]]; then
 		while IFS= read -r pid; do
-			if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
+			# Validate PID is numeric before using with kill
+			if [[ -n "${pid}" && "${pid}" =~ ^[0-9]+$ ]] && kill -0 "${pid}" 2>/dev/null; then
 				log_debug "Cleaning up swaybg process (PID: ${pid})"
 				kill -TERM "${pid}" 2>/dev/null || true
 				sleep 0.1
@@ -61,7 +62,8 @@ cleanup_all_processes() {
 	if [[ -f "${RUNTIME_DIR}/socket.pid" ]]; then
 		local socat_pid
 		socat_pid=$(<"${RUNTIME_DIR}/socket.pid")
-		if kill -0 "${socat_pid}" 2>/dev/null; then
+		# Validate PID is numeric before using with kill
+		if [[ -n "${socat_pid}" && "${socat_pid}" =~ ^[0-9]+$ ]] && kill -0 "${socat_pid}" 2>/dev/null; then
 			log_debug "Cleaning up socat process (PID: ${socat_pid})"
 			kill -TERM "${socat_pid}" 2>/dev/null || true
 			sleep 0.1

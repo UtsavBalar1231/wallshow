@@ -69,6 +69,39 @@ declare -r DEFAULT_CONFIG='{
 }'
 
 # ============================================================================
+# RETRY LIMITS
+# ============================================================================
+
+declare -ri RETRY_STATE_UPDATE=5
+declare -ri RETRY_WALLPAPER_SELECT=10
+declare -ri RETRY_STATUS_UPDATE=3
+declare -ri RETRY_ANIMATION_FAILURES=10
+
+# ============================================================================
+# INTERVALS (seconds unless noted)
+# ============================================================================
+
+declare -ri INTERVAL_CACHE_REFRESH=3600
+declare -ri INTERVAL_CACHE_CLEANUP=3600
+declare -ri INTERVAL_PID_CHECK=60
+declare -ri INTERVAL_GRACEFUL_EXIT_DS=20 # deciseconds (2 seconds)
+
+# ============================================================================
+# LIMITS
+# ============================================================================
+
+declare -ri LIMIT_HISTORY_ENTRIES=100
+declare -ri LIMIT_MIN_FRAME_DELAY_MS=10
+declare -ri LIMIT_COMMAND_LOCK_TIMEOUT=30
+declare -ri LIMIT_STATE_LOCK_TIMEOUT=5
+
+# ============================================================================
+# SUPPORTED TOOLS
+# ============================================================================
+
+declare -ra WALLPAPER_TOOLS=("swww" "swaybg" "hyprpaper" "mpvpaper" "feh" "xwallpaper" "nitrogen")
+
+# ============================================================================
 # EXIT CODES
 # ============================================================================
 

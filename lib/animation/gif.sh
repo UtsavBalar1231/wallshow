@@ -23,8 +23,11 @@ extract_gif_frames() {
 
 	# Extract frames and capture errors
 	local extract_errors
-	extract_errors=$(mktemp)
-	chmod 600 "${extract_errors}" # Secure immediately
+	if ! extract_errors=$(mktemp); then
+		log_error "Failed to create temp file for extraction errors"
+		return 1
+	fi
+	chmod 600 "${extract_errors}" || log_warn "Failed to secure temp file: ${extract_errors}"
 
 	if ${convert_cmd} "${gif_path}" -coalesce "${output_dir}/frame_%04d.png" 2>"${extract_errors}"; then
 		rm -f "${extract_errors}"
@@ -41,12 +44,12 @@ extract_gif_frames() {
 
 	# Extract native frame delays (in centiseconds, GIF standard)
 	log_info "Extracting native frame delays from: ${gif_path}"
-	local identify_cmd="identify"
-	command -v magick &>/dev/null && identify_cmd="magick identify"
+	local identify_cmd=("identify")
+	command -v magick &>/dev/null && identify_cmd=("magick" "identify")
 
 	local delays_json
 	local identify_output
-	if identify_output=$(${identify_cmd} -format "%T\n" "${gif_path}" 2>/dev/null); then
+	if identify_output=$("${identify_cmd[@]}" -format "%T\n" "${gif_path}" 2>/dev/null); then
 		if delays_json=$(echo "${identify_output}" | jq -s '.'); then
 			if [[ -n "${delays_json}" && "${delays_json}" != "null" && "${delays_json}" != "" ]]; then
 				echo "${delays_json}" >"${output_dir}/delays.json"
@@ -103,12 +106,13 @@ handle_animated_wallpaper() {
 		fi
 	fi
 
-	# Get frame delay from config (minimum 10ms to prevent CPU busy loop)
+	# Get frame delay from config (minimum LIMIT_MIN_FRAME_DELAY_MS to prevent CPU busy loop)
 	local frame_delay
 	frame_delay=$(get_config '.intervals.gif_frame_ms' '50')
-	if [[ ${frame_delay} -lt 10 ]]; then
-		log_warn "Frame delay (${frame_delay}ms) too low, using minimum 10ms"
-		frame_delay=10
+	frame_delay=$(validate_numeric "${frame_delay}" "50" "${LIMIT_MIN_FRAME_DELAY_MS}" "1000")
+	if [[ "${frame_delay}" -lt "${LIMIT_MIN_FRAME_DELAY_MS}" ]]; then
+		log_warn "Frame delay (${frame_delay}ms) too low, using minimum ${LIMIT_MIN_FRAME_DELAY_MS}ms"
+		frame_delay="${LIMIT_MIN_FRAME_DELAY_MS}"
 	fi
 
 	# Start animation in background
@@ -122,7 +126,14 @@ handle_animated_wallpaper() {
 		# Set trap to clean PID on ANY exit (crash, normal, error)
 		trap 'update_state_atomic ".processes.animation_pid = null" 2>/dev/null || true' EXIT
 
-		animate_gif_frames "${gifs_cache}" "${frame_delay}"
+		# Run animation and report errors to state for parent to detect
+		if ! animate_gif_frames "${gifs_cache}" "${frame_delay}"; then
+			local error_msg
+			error_msg=$(printf '%s' "Animation failed for: ${gif_path}" | jq -Rs .)
+			update_state_atomic ".animation_error = ${error_msg}" 2>/dev/null || true
+			log_error "Animation subprocess exiting with failure"
+			exit 1
+		fi
 	) &
 
 	local animation_pid=$!

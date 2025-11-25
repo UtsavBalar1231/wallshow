@@ -22,6 +22,7 @@ Commands:
     resume      Resume slideshow
     status      Show current status
     info        Show detailed information
+    diagnose    Run diagnostics and troubleshoot issues
     list        List available wallpapers
     reload      Reload configuration
     clean       Clean cache
@@ -102,6 +103,209 @@ show_info() {
 		fi
 		printf "%-20s: %s\n" "Cache Size" "${cache_size}"
 	fi
+}
+
+# ============================================================================
+# DIAGNOSTICS CHECKS (extracted for testability)
+# ============================================================================
+
+# Returns: issues found (0 or 1)
+_diag_daemon_status() {
+	echo "1. Daemon Status"
+	echo "   ─────────────"
+	if check_instance; then
+		local daemon_pid
+		daemon_pid=$(read_state '.processes.main_pid // null')
+		echo "   [OK] Daemon running (PID: ${daemon_pid})"
+		return 0
+	else
+		echo "   [ERROR] Daemon not running"
+		return 1
+	fi
+}
+
+# Returns: issues found (0 or more)
+_diag_wallpaper_dirs() {
+	local issues=0
+	echo "2. Wallpaper Directories"
+	echo "   ──────────────────────"
+	local static_dir animated_dir
+	static_dir=$(get_config '.wallpaper_dirs.static' '')
+	animated_dir=$(get_config '.wallpaper_dirs.animated' '')
+
+	static_dir="${static_dir/#\~/${HOME}}"
+	animated_dir="${animated_dir/#\~/${HOME}}"
+
+	if [[ -d "${static_dir}" ]]; then
+		local static_count
+		static_count=$(find "${static_dir}" -type f \( -iname "*.jpg" -o -iname "*.png" -o -iname "*.jpeg" \) 2>/dev/null | wc -l)
+		echo "   [OK] Static: ${static_dir} (${static_count} images)"
+	else
+		echo "   [ERROR] Static directory not found: ${static_dir}"
+		issues=$((issues + 1))
+	fi
+
+	if [[ -d "${animated_dir}" ]]; then
+		local gif_count
+		gif_count=$(find "${animated_dir}" -type f -iname "*.gif" 2>/dev/null | wc -l)
+		echo "   [OK] Animated: ${animated_dir} (${gif_count} GIFs)"
+	else
+		echo "   [WARN] Animated directory not found: ${animated_dir}"
+	fi
+	return "${issues}"
+}
+
+# Returns: issues found (0 or 1)
+_diag_tools() {
+	echo "3. Wallpaper Tools"
+	echo "   ────────────────"
+	local display_server
+	display_server=$(detect_display_server)
+	local required_tools
+	if [[ "${display_server}" == "wayland" ]]; then
+		required_tools=("swww" "swaybg")
+	else
+		required_tools=("feh" "xwallpaper")
+	fi
+
+	local tool_found=false
+	for tool in "${required_tools[@]}"; do
+		if command -v "${tool}" &>/dev/null; then
+			echo "   [OK] ${tool} available"
+			tool_found=true
+		else
+			echo "   [WARN] ${tool} not found"
+		fi
+	done
+
+	if ! ${tool_found}; then
+		echo "   [ERROR] No compatible wallpaper tool found for ${display_server}"
+		return 1
+	fi
+	return 0
+}
+
+# Returns: issues found (0 or more)
+_diag_recent_errors() {
+	local issues=0
+	echo "4. Recent Errors"
+	echo "   ─────────────"
+	local last_error
+	last_error=$(read_state '.last_error // null')
+	if [[ "${last_error}" != "null" ]]; then
+		echo "   [ERROR] Last error: ${last_error}"
+		issues=$((issues + 1))
+	else
+		echo "   [OK] No recent errors recorded"
+	fi
+
+	local animation_error
+	animation_error=$(read_state '.animation_error // null')
+	if [[ "${animation_error}" != "null" ]]; then
+		echo "   [ERROR] Animation error: ${animation_error}"
+		issues=$((issues + 1))
+	fi
+	return "${issues}"
+}
+
+# Returns: issues found (0 or 1)
+_diag_process_health() {
+	echo "5. Process Health"
+	echo "   ───────────────"
+	local animation_pid
+	animation_pid=$(read_state '.processes.animation_pid // null')
+	if [[ "${animation_pid}" != "null" && -n "${animation_pid}" ]]; then
+		if [[ "${animation_pid}" =~ ^[0-9]+$ ]] && kill -0 "${animation_pid}" 2>/dev/null; then
+			echo "   [OK] Animation process running (PID: ${animation_pid})"
+		else
+			echo "   [WARN] Animation PID ${animation_pid} recorded but process not running"
+			return 1
+		fi
+	else
+		echo "   [INFO] No animation currently running"
+	fi
+	return 0
+}
+
+# Returns: issues found (0 or 1)
+_diag_last_change() {
+	local issues=0
+	echo "6. Last Wallpaper Change"
+	echo "   ─────────────────────"
+	local last_change current_wallpaper
+	last_change=$(read_state '.stats.last_change // null')
+	current_wallpaper=$(read_state '.current_wallpaper // null')
+
+	if [[ "${last_change}" != "null" ]]; then
+		echo "   Time: ${last_change}"
+	else
+		echo "   Time: Never"
+	fi
+
+	if [[ "${current_wallpaper}" != "null" ]]; then
+		echo "   File: ${current_wallpaper}"
+		if [[ -f "${current_wallpaper}" ]]; then
+			echo "   Status: [OK] File exists"
+		else
+			echo "   Status: [ERROR] File no longer exists"
+			issues=$((issues + 1))
+		fi
+	fi
+	return "${issues}"
+}
+
+diagnose_issues() {
+	echo "═══════════════════════════════════════════════════"
+	echo " ${SCRIPT_NAME} Diagnostics Report"
+	echo "═══════════════════════════════════════════════════"
+	echo
+
+	local issues_found=0
+	local check_result
+
+	_diag_daemon_status
+	check_result=$?
+	issues_found=$((issues_found + check_result))
+	echo
+
+	_diag_wallpaper_dirs
+	check_result=$?
+	issues_found=$((issues_found + check_result))
+	echo
+
+	_diag_tools
+	check_result=$?
+	issues_found=$((issues_found + check_result))
+	echo
+
+	_diag_recent_errors
+	check_result=$?
+	issues_found=$((issues_found + check_result))
+	echo
+
+	_diag_process_health
+	check_result=$?
+	issues_found=$((issues_found + check_result))
+	echo
+
+	_diag_last_change
+	check_result=$?
+	issues_found=$((issues_found + check_result))
+	echo
+
+	# Summary
+	echo "═══════════════════════════════════════════════════"
+	if [[ "${issues_found}" -eq 0 ]]; then
+		echo " Result: No issues detected"
+	else
+		echo " Result: ${issues_found} issue(s) found"
+	fi
+	echo "═══════════════════════════════════════════════════"
+
+	echo
+	echo "For detailed logs, run: tail -100 ${LOG_FILE}"
+
+	return "${issues_found}"
 }
 
 list_wallpapers() {

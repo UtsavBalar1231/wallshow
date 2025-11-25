@@ -35,6 +35,17 @@ get_config() {
 		init_config
 	fi
 
+	# Try cache first for common config keys (removes leading dot from query)
+	local cache_key="${query#.}"
+	local cached_value
+	cached_value=$(get_config_cached "${cache_key}" "")
+
+	if [[ -n "${cached_value}" && "${cached_value}" != "null" ]]; then
+		echo "${cached_value}"
+		return
+	fi
+
+	# Cache miss - fall back to jq (for uncached keys or first call before cache init)
 	local config_value
 	config_value=$(jq -r "${query}" "${CONFIG_FILE}" 2>/dev/null || echo "null")
 
@@ -53,6 +64,10 @@ reload_config() {
 		log_error "Invalid configuration file, keeping current config"
 		return 1
 	fi
+
+	# Invalidate and rebuild config cache
+	invalidate_config_cache
+	cache_config
 
 	# Update log level if changed
 	local debug_flag

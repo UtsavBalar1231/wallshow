@@ -35,7 +35,13 @@ log() {
 
 		# File output - log file is initialized in init_directories()
 		# Rotation is handled externally by logrotate (/etc/logrotate.d/wallshow)
-		echo "${log_line}" >>"${LOG_FILE}"
+		if ! echo "${log_line}" >>"${LOG_FILE}" 2>/dev/null; then
+			# Log file write failed - fallback to stderr only in daemon mode
+			# (non-daemon already logged to stderr above)
+			if [[ "${IS_DAEMON}" == "true" ]]; then
+				echo "${log_line}" >&2
+			fi
+		fi
 	fi
 }
 

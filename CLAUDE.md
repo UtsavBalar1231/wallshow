@@ -8,70 +8,40 @@ Wallshow is a professional wallpaper manager for Wayland/X11 written in Bash. It
 
 ## Quick Reference
 
-**Common Commands:**
 ```bash
 # Development
 just install          # Install to ~/.local (includes systemd service)
-just uninstall        # Remove from ~/.local (stops/disables service)
+just uninstall        # Remove from ~/.local
 just run help         # Run from source without installing
 just lint             # Run shellcheck
 just ci-local         # Run all CI checks locally
 
-# Testing
-wallshow -d daemon    # Run daemon in foreground with debug
+# Debugging
+wallshow daemon       # Run daemon in foreground (add -d for debug logs)
 wallshow status | jq  # Check current status
 tail -f ~/.local/state/wallshow/wallpaper.log  # Monitor logs
+jq '.' ~/.local/state/wallshow/state.json      # Inspect state
 
 # Building
 just build-all        # Build all packages (Debian, Arch, RPM)
 ```
 
 **Key Files to Modify:**
-- State schema: `system/init.sh:init_state()`
-- Config schema: `core/constants.sh:DEFAULT_CONFIG`
-- Module loading order: `bin/wallshow` (top section)
+| Task | File(s) |
+|------|---------|
+| State schema | `lib/system/init.sh:init_state()` |
+| Config schema | `lib/core/constants.sh:DEFAULT_CONFIG` |
+| Module loading order | `bin/wallshow` (top section) |
+| Exit codes | `lib/core/constants.sh` |
+| IPC commands | `lib/daemon/ipc.sh:handle_socket_command()` |
+| CLI commands | `lib/cli/commands.sh:main()` |
+| Wallpaper backends | `lib/wallpaper/backends.sh` |
 
 ## Core Architecture
 
-### Modular Design
+### Module Organization
 
-Wallshow uses a **feature-based modular architecture** with 17 modules organized across 6 directories:
-
-```
-wallshow/
-├── bin/
-│   └── wallshow              # Main entry point (sources modules)
-├── lib/                      # Modular libraries
-│   ├── core/                 # Core functionality
-│   │   ├── constants.sh      # Global constants, XDG paths, exit codes
-│   │   ├── logging.sh        # Logging system with rotation
-│   │   ├── state.sh          # JSON state management (atomic updates)
-│   │   └── config.sh         # Configuration loading and validation
-│   ├── system/               # System-level operations
-│   │   ├── locking.sh        # Instance locking with flock
-│   │   ├── paths.sh          # Path validation and sanitization
-│   │   └── init.sh           # Directory initialization, cleanup handlers
-│   ├── wallpaper/            # Wallpaper management
-│   │   ├── discovery.sh      # Find and cache wallpapers
-│   │   ├── selection.sh      # Random selection, battery awareness
-│   │   └── backends.sh       # Backend support (swww, swaybg, feh, xwallpaper)
-│   ├── animation/            # GIF animation support
-│   │   ├── gif.sh            # Frame extraction, ImageMagick interface
-│   │   └── playback.sh       # Animation subprocess, frame cycling
-│   ├── daemon/               # Daemon mode
-│   │   ├── process.sh        # Daemonization, signal handling
-│   │   ├── ipc.sh            # Unix socket IPC, command handlers
-│   │   └── loop.sh           # Main wallpaper change loop
-│   └── cli/                  # Command-line interface
-│       ├── commands.sh       # Command dispatch, dependency checks
-│       └── interface.sh      # Help text, status display
-├── debian/                   # Debian packaging
-├── pkg/                      # Arch Linux packaging (PKGBUILD)
-├── rpm/                      # Fedora packaging (spec file)
-├── docs/                     # Design documents
-├── Justfile                  # Development automation
-└── wallshow-legacy.sh        # Archived original (single-file version)
-```
+Modules live in `lib/` organized by feature: `core/`, `system/`, `wallpaper/`, `animation/`, `daemon/`, `cli/`. Entry point is `bin/wallshow`.
 
 ### Module Dependencies
 
@@ -123,88 +93,21 @@ Multi-tool support with intelligent fallback:
 
 ## Development Workflow
 
-### Development Setup
-
 ```bash
-# Clone and enter directory
-git clone https://github.com/UtsavBalar1231/wallshow.git
-cd wallshow
+# Setup
+git clone https://github.com/UtsavBalar1231/wallshow.git && cd wallshow
+just install                    # Install to ~/.local (no root required)
 
-# Install to ~/.local for testing (no root required, includes systemd service)
-just install
+# Run from source (without installing)
+just run help                   # Auto-detects lib/ in dev mode
 
-# Enable auto-start on login (optional)
-systemctl --user enable --now wallshow.service
-
-# Or run directly from source without installing
-# Note: bin/wallshow auto-detects lib/ in dev mode, so WALLSHOW_LIB is optional
-just run help
-
-# Or with explicit library path
-WALLSHOW_LIB="$(pwd)/lib" ./bin/wallshow help
-```
-
-### Testing Commands
-
-```bash
-# Run lint only
-just lint
-
-# Test wallpaper setting (one-shot)
-wallshow next
-
-# Test daemon mode in foreground (debugging)
-wallshow daemon
-
-# Monitor logs in real-time
-tail -f ~/.local/state/wallshow/wallpaper.log
-
-# Check status
-wallshow status | jq '.'
-```
-
-### Debugging
-
-```bash
-# Enable debug logging
-wallshow -d daemon
-
-# Inspect state file
-jq '.' ~/.local/state/wallshow/state.json
-
-# Check lock status
+# Debugging
 flock -n /run/user/$(id -u)/wallshow/instance.lock echo "unlocked" || echo "locked"
-
-# Test wallpaper discovery
 jq '.cache.static.files[]' ~/.local/state/wallshow/state.json
-```
 
-### Cache Management
-```bash
-# Check cache size
-du -sh ~/.cache/wallshow
-
-# Manual cache cleanup
-wallshow clean
-
-# Clear all cached GIF frames
-rm -rf ~/.cache/wallshow/gifs/*
-```
-
-### Building Packages
-
-```bash
-# Build Debian package
-just build-deb
-
-# Build Arch package
-just build-pkg
-
-# Build Fedora package
-just build-rpm
-
-# Build all packages
-just build-all
+# Cache management
+du -sh ~/.cache/wallshow        # Check cache size
+wallshow clean                  # Manual cleanup
 ```
 
 ## Key Design Patterns
@@ -367,43 +270,13 @@ The config.json schema:
 
 ## Code Style
 
-This codebase follows strict Bash best practices:
-- Functions use snake_case naming
-- Constants use SCREAMING_SNAKE_CASE with `declare -r`
-- All variables quoted: `"${var}"` not `$var`
-- Process substitution preferred over pipes for loops (avoids subshells)
-- Comprehensive error checking (exit code validation, file existence, etc.)
-- Heavy commenting with section dividers
-- Shellcheck compliance required for all shell code
+- **Naming**: Functions/variables use `snake_case`, constants use `SCREAMING_SNAKE_CASE` with `declare -r`
+- **Variables**: Always quoted: `"${var}"` not `$var`
+- **Strict mode**: All modules use `set -euo pipefail`
+- **Shellcheck**: All code must pass `shellcheck -x`
+- **Commits**: Follow [Conventional Commits](https://www.conventionalcommits.org/) - `feat(scope): description`
 
-See CONTRIBUTING.md for detailed code style guidelines.
-
-### Commit Messages
-
-Follow [Conventional Commits](https://www.conventionalcommits.org/):
-
-**Format:**
-```
-<type>(<optional scope>): <description>
-
-[optional body]
-```
-
-**Types:**
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation changes
-- `refactor`: Code refactoring (no behavior change)
-- `test`: Adding or updating tests
-- `chore`: Maintenance tasks
-
-**Examples:**
-```bash
-feat(animation): add configurable GIF loop count
-fix(daemon): handle SIGTERM gracefully
-docs(readme): add systemd autostart instructions
-refactor(state): extract atomic update logic to helper function
-```
+See CONTRIBUTING.md for detailed guidelines.
 
 ## Common Issues and Solutions
 
@@ -438,146 +311,34 @@ wallshow reload
 
 ## Packaging
 
-Wallshow includes native packaging for:
+Build packages: `just build-deb`, `just build-pkg`, `just build-rpm`, or `just build-all`.
 
-- **Debian/Ubuntu**: `debian/` directory with debhelper build system
-- **Arch Linux**: `pkg/PKGBUILD` for makepkg
-- **Fedora/RHEL**: `rpm/wallshow.spec` for rpmbuild
+Packages install to `/usr/bin/wallshow` (executable), `/usr/lib/wallshow/` (modules), with systemd user service and logrotate config.
 
-All packages install to:
-```
-/usr/bin/wallshow                    # Main executable
-/usr/lib/wallshow/                   # Library modules (preserved structure)
-/usr/share/doc/wallshow/             # Documentation
-/etc/logrotate.d/wallshow            # Logrotate configuration
-/usr/lib/systemd/user/wallshow.service  # Systemd user service
-```
+## Systemd & Logging
 
-Build with:
 ```bash
-just build-deb    # Debian package
-just build-pkg    # Arch package
-just build-rpm    # Fedora package
-just build-all    # All packages
-```
+# Auto-start on login
+systemctl --user enable --now wallshow.service
 
-## Development Automation (Justfile)
-
-Common tasks are automated via `just`:
-
-- `just install` - Install to ~/.local for testing
-- `just uninstall` - Remove local installation
-- `just lint` - Run shellcheck on all shell code
-- `just pre-commit` - Run pre-commit hooks manually
-- `just ci-local` - Run all CI checks locally
-- `just run <args>` - Run from source without installing
-- `just build-deb` - Build Debian package
-- `just build-pkg` - Build Arch package
-- `just build-rpm` - Build Fedora package
-- `just build-all` - Build all packages
-- `just clean` - Remove build artifacts
-
-See `just --list` for all available commands.
-
-## Log Rotation
-
-Wallshow uses **logrotate** for professional log management (custom rotation logic was removed in favor of logrotate):
-
-**Configuration**: `/etc/logrotate.d/wallshow`
-- Daily rotation, keeps 7 days
-- Gzip compression (delayed)
-- Uses `copytruncate` to avoid interrupting daemon
-- Handles all `*.log` files in `~/.local/state/wallshow/`
-
-**Manual rotation test**:
-```bash
-logrotate -d /etc/logrotate.d/wallshow  # Dry run
-```
-
-The configuration is installed automatically by all packages and marked as `config(noreplace)` to preserve local modifications.
-
-## Systemd Integration
-
-Wallshow can run as a **systemd user service** for automatic startup:
-
-**Enable and start**:
-```bash
-systemctl --user enable wallshow.service
-systemctl --user start wallshow.service
-```
-
-**Check status**:
-```bash
-systemctl --user status wallshow.service
-```
-
-**View logs**:
-```bash
+# View service logs
 journalctl --user -u wallshow.service -f
 ```
 
-The service file is installed to `/usr/lib/systemd/user/wallshow.service` by all packages.
+Logs use **logrotate** (daily rotation, 7 days retention, gzip compression). Config: `/etc/logrotate.d/wallshow`.
 
-## CI/CD Pipeline
+## CI/CD
 
-Wallshow uses **GitHub Actions** for automated testing and releases:
+- **lint.yml**: shellcheck, shfmt, YAML validation on push/PR
+- **build.yml**: Builds all packages, uploads artifacts
+- **release.yml**: Creates GitHub release on version tags (v*.*.*)
 
-**Workflows**:
-- **lint.yml**: Runs on push/PR - shellcheck, shfmt, YAML validation, packaging checks
-- **build.yml**: Builds all packages (Debian, Arch, RPM) on push/PR, uploads artifacts
-- **release.yml**: Triggered by git tags (v*.*.*) - builds packages, creates GitHub release with assets
-
-**Local CI simulation**:
-```bash
-just ci-local  # Run all CI checks locally
-```
+Run locally: `just ci-local`
 
 ## Pre-commit Hooks
 
-Wallshow includes **pre-commit** configuration for automated code quality checks:
-
-**Setup**:
 ```bash
-pip install pre-commit
-pre-commit install
+pip install pre-commit && pre-commit install
 ```
 
-**Manual run**:
-```bash
-pre-commit run --all-files
-# or
-just pre-commit
-```
-
-**Hooks configured**:
-- shellcheck (linting)
-- shfmt (formatting)
-- trailing whitespace removal
-- end-of-file newline fixer
-- large file detection
-- YAML/JSON validation
-
-See `.pre-commit-config.yaml` for full configuration.
-
-## Future Enhancements
-
-Planned features for future releases:
-
-- Man page generation from README
-- Multi-monitor configuration support
-- Additional backends (hyprpaper, mpvpaper)
-
-See GitHub issues for current feature requests and roadmap.
-
-## Legacy Code
-
-The original single-file version (`wallshow-legacy.sh`) is archived for reference. All new development should use the modular architecture.
-
-## References
-
-- XDG Base Directory Specification
-- Debian Policy Manual (packaging)
-- Arch PKGBUILD guidelines
-- Fedora RPM Packaging Guidelines
-- shellcheck documentation
-- Just command runner documentation
+Hooks: shellcheck, shfmt, trailing whitespace, end-of-file, large file detection, YAML/JSON validation.

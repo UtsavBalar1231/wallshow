@@ -13,10 +13,10 @@ cleanup_cache() {
 
 	log_info "Cleaning cache (max size: ${max_cache_mb}MB)"
 
-	# Get current cache size
+	# Get current cache size (parameter expansion instead of echo|cut)
 	local current_size
 	if current_size=$(du -sb "${CACHE_DIR}" 2>/dev/null); then
-		current_size=$(echo "${current_size}" | cut -f1)
+		current_size="${current_size%%$'\t'*}"
 		if [[ ! "${current_size}" =~ ^[0-9]+$ ]]; then
 			current_size="0"
 		fi
@@ -41,7 +41,7 @@ cleanup_cache() {
 		[[ -z "${dir}" ]] && continue
 		local dir_size
 		if dir_size=$(du -sb "${dir}" 2>/dev/null); then
-			dir_size=$(echo "${dir_size}" | cut -f1)
+			dir_size="${dir_size%%$'\t'*}"
 			if [[ ! "${dir_size}" =~ ^[0-9]+$ ]]; then
 				dir_size="0"
 			fi
@@ -83,6 +83,33 @@ cleanup_cache() {
 	log_info "Cache cleanup completed (freed $((freed_space / 1024 / 1024))MB)"
 }
 
+# Run cache cleanup in background (non-blocking)
+cleanup_cache_background() {
+	local cleanup_lock="${RUNTIME_DIR}/cache_cleanup.lock"
+
+	# Skip if cleanup already running (non-blocking check)
+	if [[ -f "${cleanup_lock}" ]]; then
+		local lock_pid
+		lock_pid=$(cat "${cleanup_lock}" 2>/dev/null || echo "")
+		if [[ -n "${lock_pid}" ]] && kill -0 "${lock_pid}" 2>/dev/null; then
+			log_debug "Cache cleanup already running (PID: ${lock_pid}), skipping"
+			return 0
+		fi
+		# Stale lock, remove it
+		rm -f "${cleanup_lock}"
+	fi
+
+	# Run cleanup in background subprocess
+	(
+		echo "$$" >"${cleanup_lock}"
+		cleanup_cache
+		rm -f "${cleanup_lock}"
+	) &
+	disown
+
+	log_debug "Cache cleanup started in background"
+}
+
 # ============================================================================
 # WALLPAPER CHANGE
 # ============================================================================
@@ -118,13 +145,84 @@ change_wallpaper() {
 		fi
 	fi
 
-	# Update state with properly escaped wallpaper path
-	local escaped_wallpaper
-	escaped_wallpaper=$(printf '%s' "${wallpaper}" | jq -Rs .)
-	update_state_atomic ".current_wallpaper = ${escaped_wallpaper}" || log_warn "Failed to update current wallpaper in state"
-	add_to_history "${wallpaper}" || log_warn "Failed to add wallpaper to history"
+	# Update state: current wallpaper + history + stats in single jq call
+	update_wallpaper_state "${wallpaper}" || log_warn "Failed to update wallpaper state"
 
 	return 0
+}
+
+# ============================================================================
+# MAIN LOOP HELPERS
+# ============================================================================
+
+# Process pending signal requests (SIGTERM, SIGUSR1, SIGUSR2)
+# Returns: 0 to continue loop, 1 to break (stop requested)
+_process_signal_requests() {
+	# Handle stop request (SIGTERM/SIGINT)
+	if [[ "${STOP_REQUESTED}" == "true" ]]; then
+		STOP_REQUESTED=false
+		log_info "Stopping main loop (signal received)..."
+		DAEMON_STATUS="stopping"
+		write_status_file
+		update_state_atomic '.status = "stopping"' &
+		stop_animation "status_change"
+		return 1
+	fi
+
+	# Handle pause request (SIGUSR1)
+	if [[ "${PAUSE_REQUESTED}" == "true" ]]; then
+		PAUSE_REQUESTED=false
+		if [[ "${DAEMON_STATUS}" != "paused" ]]; then
+			log_info "Pausing daemon (signal received)"
+			DAEMON_STATUS="paused"
+			write_status_file
+			stop_animation "pause"
+			update_state_atomic '.status = "paused"' &
+		fi
+	fi
+
+	# Handle resume request (SIGUSR2)
+	if [[ "${RESUME_REQUESTED}" == "true" ]]; then
+		RESUME_REQUESTED=false
+		if [[ "${DAEMON_STATUS}" == "paused" ]]; then
+			log_info "Resuming daemon (signal received)"
+			DAEMON_STATUS="running"
+			write_status_file
+			update_state_atomic '.status = "running"' &
+
+			# Restart animation if current wallpaper is a GIF
+			local current_wallpaper
+			current_wallpaper=$(read_state '.current_wallpaper // null')
+			if [[ "${current_wallpaper}" != "null" && "${current_wallpaper}" =~ \.(gif)$ ]]; then
+				(handle_animated_wallpaper "${current_wallpaper}" &)
+				log_info "Restarted GIF animation for: ${current_wallpaper}"
+			fi
+		fi
+	fi
+
+	return 0
+}
+
+# Validate animation PID and handle errors
+_validate_animation_pid() {
+	local animation_pid
+	animation_pid=$(read_state '.processes.animation_pid // null')
+	if [[ "${animation_pid}" != "null" && -n "${animation_pid}" ]]; then
+		if ! kill -0 "${animation_pid}" 2>/dev/null; then
+			log_warn "Animation PID ${animation_pid} not running, cleaning stale PID"
+			update_state_atomic '.processes.animation_pid = null'
+		fi
+	fi
+
+	# Check for animation errors reported by subprocess
+	local animation_error
+	animation_error=$(read_state '.animation_error // null')
+	if [[ "${animation_error}" != "null" ]]; then
+		log_warn "Animation error detected: ${animation_error}"
+		update_state_atomic '.animation_error = null'
+		log_info "Attempting recovery by selecting new wallpaper"
+		change_wallpaper || log_error "Recovery wallpaper change also failed"
+	fi
 }
 
 # ============================================================================
@@ -144,23 +242,8 @@ main_loop() {
 		fi
 	fi
 
-	# Update status (use atomic for consistency)
-	# Retry with state regeneration if needed (handles corrupted state files)
-	local retries=0
-	while ! update_state_atomic '.status = "running"'; do
-		retries=$((retries + 1))
-		if [[ ${retries} -ge 3 ]]; then
-			log_error "State file appears corrupted after 3 attempts, regenerating..."
-			init_state
-			if ! update_state_atomic '.status = "running"'; then
-				log_error "FATAL: Cannot update state even after regeneration"
-				return 1
-			fi
-			break
-		fi
-		log_warn "Failed to update status to running (attempt ${retries}/3), retrying..."
-		sleep 1
-	done
+	# Update state file for persistence (in-memory status already set in daemonize())
+	update_state_atomic '.status = "running"' || log_warn "Failed to persist running status"
 
 	# Get change interval from config
 	local change_interval
@@ -171,45 +254,28 @@ main_loop() {
 		log_warn "Initial wallpaper change failed, will retry in loop"
 	fi
 
-	# Main loop
-	local last_change
-	last_change=$(date +%s)
-	local last_cleanup
-	last_cleanup=$(date +%s)
-	# Track last PID validation time
-	local last_pid_check
-	last_pid_check=$(date +%s)
+	# Main loop - use printf builtin instead of date subprocess
+	local last_change last_cleanup last_pid_check
+	printf -v last_change '%(%s)T' -1
+	printf -v last_cleanup '%(%s)T' -1
+	printf -v last_pid_check '%(%s)T' -1
 
 	while true; do
-		# Check status
-		local status
-		status=$(read_state '.status')
+		# Process signal requests (returns 1 to break on stop)
+		_process_signal_requests || break
 
-		case "${status}" in
-		"stopping" | "stopped")
-			log_info "Stopping main loop..."
-			stop_animation "status_change"
-			break
-			;;
-		"paused")
-			sleep 1
+		# Skip processing if paused (fast check - no I/O)
+		if [[ "${DAEMON_STATUS}" == "paused" ]]; then
+			sleep 60
 			continue
-			;;
-		"running") ;;
-		*)
-			log_warn "Unknown status: ${status}"
-			sleep 1
-			continue
-			;;
-		esac
+		fi
 
-		# Check if it's time to change wallpaper
+		# Check if it's time to change wallpaper (printf builtin - no subprocess)
 		local now
-		now=$(date +%s)
+		printf -v now '%(%s)T' -1
 		local elapsed=$((now - last_change))
 
-		if [[ ${elapsed} -ge ${change_interval} ]]; then
-			# Only update last_change if wallpaper change succeeds
+		if [[ "${elapsed}" -ge "${change_interval}" ]]; then
 			if change_wallpaper; then
 				last_change=${now}
 			else
@@ -217,28 +283,21 @@ main_loop() {
 			fi
 		fi
 
-		# Periodic validation of animation PID (every 60 seconds)
-		if [[ $((now - last_pid_check)) -ge 60 ]]; then
-			local animation_pid
-			animation_pid=$(read_state '.processes.animation_pid // null')
-			if [[ "${animation_pid}" != "null" && -n "${animation_pid}" ]]; then
-				if ! kill -0 "${animation_pid}" 2>/dev/null; then
-					log_warn "Animation PID ${animation_pid} not running, cleaning stale PID"
-					update_state_atomic '.processes.animation_pid = null'
-				fi
-			fi
+		# Periodic validation of animation PID
+		if [[ $((now - last_pid_check)) -ge ${INTERVAL_PID_CHECK} ]]; then
+			_validate_animation_pid
 			last_pid_check=${now}
 		fi
 
-		# Periodic cache cleanup (every hour)
+		# Periodic cache cleanup (non-blocking)
 		local cleanup_elapsed=$((now - last_cleanup))
-		if [[ ${cleanup_elapsed} -ge 3600 ]]; then
-			cleanup_cache
+		if [[ "${cleanup_elapsed}" -ge "${INTERVAL_CACHE_CLEANUP}" ]]; then
+			cleanup_cache_background
 			last_cleanup=${now}
 		fi
 
-		# Sleep for a bit
-		sleep 1
+		# Sleep 60s (signals wake us immediately)
+		sleep 60
 	done
 
 	log_info "Main loop ended"
