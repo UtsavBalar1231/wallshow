@@ -2,7 +2,7 @@
 debian/.debhelper/
 debian/wallshow/
 debian/files
-debian/*.debhelper.log
+debian/*debhelper*
 debian/*.substvars
 debian/debhelper-build-stamp
 debian/tmp/
