@@ -146,7 +146,12 @@ change_wallpaper() {
 	fi
 
 	# Update state: current wallpaper + history + stats in single jq call
-	update_wallpaper_state "${wallpaper}" || log_warn "Failed to update wallpaper state"
+	# CRITICAL: If state update fails, the displayed wallpaper doesn't match recorded state
+	# Return failure so caller knows operation wasn't fully successful
+	if ! update_wallpaper_state "${wallpaper}"; then
+		log_error "Failed to update wallpaper state - state inconsistent with display"
+		return 1
+	fi
 
 	return 0
 }
@@ -207,18 +212,36 @@ _process_signal_requests() {
 _validate_animation_pid() {
 	local animation_pid
 	animation_pid=$(read_state '.processes.animation_pid // null')
+
+	# First check: is the recorded PID actually running?
 	if [[ "${animation_pid}" != "null" && -n "${animation_pid}" ]]; then
-		if ! kill -0 "${animation_pid}" 2>/dev/null; then
+		if ! is_valid_pid "${animation_pid}" || ! kill -0 "${animation_pid}" 2>/dev/null; then
 			log_warn "Animation PID ${animation_pid} not running, cleaning stale PID"
 			update_state_atomic '.processes.animation_pid = null'
+			# Re-read to confirm cleanup
+			animation_pid="null"
 		fi
 	fi
 
-	# Check for animation errors reported by subprocess
+	# Second check: any animation errors reported by subprocess?
 	local animation_error
 	animation_error=$(read_state '.animation_error // null')
 	if [[ "${animation_error}" != "null" ]]; then
 		log_warn "Animation error detected: ${animation_error}"
+
+		# Ensure subprocess is actually stopped (may have crashed after reporting error)
+		animation_pid=$(read_state '.processes.animation_pid // null')
+		if [[ "${animation_pid}" != "null" && -n "${animation_pid}" ]]; then
+			if is_valid_pid "${animation_pid}" && kill -0 "${animation_pid}" 2>/dev/null; then
+				log_debug "Stopping errored animation subprocess"
+				stop_animation "error_recovery"
+			else
+				# Already dead, just clean state
+				update_state_atomic '.processes.animation_pid = null'
+			fi
+		fi
+
+		# Clear error after handling
 		update_state_atomic '.animation_error = null'
 		log_info "Attempting recovery by selecting new wallpaper"
 		change_wallpaper || log_error "Recovery wallpaper change also failed"
@@ -242,8 +265,11 @@ main_loop() {
 		fi
 	fi
 
-	# Update state file for persistence (in-memory status already set in daemonize())
-	update_state_atomic '.status = "running"' || log_warn "Failed to persist running status"
+	# CRITICAL: State persistence failure means daemon state is inconsistent
+	# Status commands will show wrong info, making daemon unmanageable
+	if ! update_state_atomic '.status = "running"'; then
+		die "Failed to persist running status - daemon state would be inconsistent" "${E_GENERAL}"
+	fi
 
 	# Get change interval from config
 	local change_interval

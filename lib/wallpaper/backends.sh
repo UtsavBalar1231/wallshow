@@ -45,9 +45,21 @@ set_wallpaper_swww() {
 		log_debug "Starting swww-daemon"
 		swww-daemon --format argb &
 		local swww_pid=$!
-		update_state_atomic ".processes.swww_daemon_pid = ${swww_pid}" || log_warn "Failed to store swww-daemon PID"
+		sleep 0.3 # Give daemon time to start
+
+		# Verify daemon started
+		if ! kill -0 "${swww_pid}" 2>/dev/null; then
+			log_error "swww-daemon failed to start"
+			return 1
+		fi
+
+		# Store PID for cleanup - failure means orphaned process
+		if ! update_state_atomic ".processes.swww_daemon_pid = ${swww_pid}"; then
+			log_error "Failed to store swww-daemon PID - killing to prevent orphan"
+			kill -TERM "${swww_pid}" 2>/dev/null || true
+			return 1
+		fi
 		log_debug "Started swww-daemon with PID: ${swww_pid}"
-		sleep 0.5 # Give daemon time to start
 	fi
 
 	# Set wallpaper with transition

@@ -43,6 +43,9 @@ _ipc_cmd_resume() {
 }
 
 _ipc_cmd_status() {
+	# Cleanup stale animation PID even when daemon is running
+	# (animation subprocess can die independently)
+	_cleanup_stale_state 2>/dev/null || true
 	show_status
 }
 
@@ -85,13 +88,25 @@ create_socket() {
 	# being called in daemon startup before this function. The instance lock
 	# prevents concurrent daemon instances from racing on socket creation.
 	if [[ -e "${SOCKET_FILE}" ]]; then
-		rm -f "${SOCKET_FILE}"
+		rm -f "${SOCKET_FILE}" || die "Failed to remove stale socket file: ${SOCKET_FILE}" "${E_GENERAL}"
 	fi
 
 	# Start socat and capture its PID reliably
 	socat UNIX-LISTEN:"${SOCKET_FILE}",fork EXEC:"${SCRIPT_PATH} --socket-handler" &
 	local socat_pid=$!
-	echo "${socat_pid}" >"${RUNTIME_DIR}/socket.pid"
+
+	# Brief wait to ensure socat started
+	sleep 0.1
+	if ! kill -0 "${socat_pid}" 2>/dev/null; then
+		die "Socat failed to start - IPC socket unavailable" "${E_GENERAL}"
+	fi
+
+	# CRITICAL: PID storage failure makes socket process orphaned and uncontrollable
+	if ! echo "${socat_pid}" >"${RUNTIME_DIR}/socket.pid"; then
+		kill -TERM "${socat_pid}" 2>/dev/null || true
+		die "Failed to write socket PID - daemon would lose control of IPC" "${E_GENERAL}"
+	fi
+
 	log_info "IPC socket created at: ${SOCKET_FILE} (PID: ${socat_pid})"
 }
 

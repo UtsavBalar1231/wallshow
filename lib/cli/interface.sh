@@ -48,6 +48,61 @@ Examples:
 EOF
 }
 
+# ============================================================================
+# STALE STATE DETECTION & CLEANUP
+# ============================================================================
+
+# Detect and auto-cleanup stale daemon state
+# Called before displaying status to ensure accuracy
+# Also useful for daemon startup to clean previous crash remnants
+_cleanup_stale_state() {
+	local main_pid animation_pid
+	local main_stale=false
+	local animation_stale=false
+
+	main_pid=$(read_state '.processes.main_pid // null')
+	animation_pid=$(read_state '.processes.animation_pid // null')
+
+	# Check main daemon PID
+	if [[ "${main_pid}" != "null" && -n "${main_pid}" ]]; then
+		if ! is_valid_pid "${main_pid}" || ! kill -0 "${main_pid}" 2>/dev/null; then
+			log_warn "Stale main PID ${main_pid} detected, cleaning up"
+			main_stale=true
+		fi
+	fi
+
+	# Check animation PID (independently - animation can die while daemon lives)
+	if [[ "${animation_pid}" != "null" && -n "${animation_pid}" ]]; then
+		if ! is_valid_pid "${animation_pid}" || ! kill -0 "${animation_pid}" 2>/dev/null; then
+			log_debug "Stale animation PID ${animation_pid} detected, cleaning up"
+			animation_stale=true
+		fi
+	fi
+
+	# Build atomic update based on what's stale
+	if ${main_stale} || ${animation_stale}; then
+		local jq_update=""
+
+		if ${main_stale}; then
+			# Main daemon dead - full cleanup
+			jq_update='.status = "stopped" | .processes.main_pid = null'
+			# Also cleanup runtime files
+			rm -f "${PID_FILE}" "${SOCKET_FILE}" "${RUNTIME_DIR}/daemon.ready" \
+				"${RUNTIME_DIR}/daemon_status" 2>/dev/null || true
+		fi
+
+		if ${animation_stale}; then
+			if [[ -n "${jq_update}" ]]; then
+				jq_update="${jq_update} | .processes.animation_pid = null"
+			else
+				jq_update='.processes.animation_pid = null'
+			fi
+		fi
+
+		update_state_atomic "${jq_update}" 2>/dev/null || true
+	fi
+}
+
 show_info() {
 	echo "═══════════════════════════════════════════════════"
 	echo " ${SCRIPT_NAME} v${VERSION}"
@@ -109,6 +164,10 @@ show_status() {
 	local status current_wallpaper changes_count last_change
 	local animation_pid main_pid cache_static cache_animated
 
+	# Auto-cleanup stale state before displaying
+	_cleanup_stale_state
+
+	# Read state (after potential cleanup)
 	status=$(read_state '.status // "stopped"')
 	current_wallpaper=$(read_state '.current_wallpaper // "none"')
 	changes_count=$(read_state '.stats.changes_count // 0')
@@ -126,7 +185,10 @@ show_status() {
 	*) status_color="\033[31m" ;;       # red
 	esac
 	printf "Status:     ${status_color}%s\033[0m" "${status}"
-	[[ "${main_pid}" != "null" ]] && printf " (PID %s)" "${main_pid}"
+	# Only show PID if validated (belt-and-suspenders after cleanup)
+	if [[ "${main_pid}" != "null" && -n "${main_pid}" ]] && is_valid_pid "${main_pid}" && kill -0 "${main_pid}" 2>/dev/null; then
+		printf " (PID %s)" "${main_pid}"
+	fi
 	echo
 
 	# Uptime (calculate from PID start time)
@@ -141,8 +203,8 @@ show_status() {
 	wallpaper_name=$(basename "${current_wallpaper}" 2>/dev/null || echo "none")
 	printf "Wallpaper:  %s\n" "${wallpaper_name}"
 
-	# Animation status
-	if [[ "${animation_pid}" != "null" && -n "${animation_pid}" ]]; then
+	# Animation status - validate PID before display
+	if [[ "${animation_pid}" != "null" && -n "${animation_pid}" ]] && is_valid_pid "${animation_pid}" && kill -0 "${animation_pid}" 2>/dev/null; then
 		printf "Animation:  running (PID %s)\n" "${animation_pid}"
 	fi
 

@@ -37,7 +37,18 @@ daemonize() {
 		# Verify no daemon is actually running
 		if ! check_instance; then
 			log_info "Cleaning up stale runtime files from previous crash"
-			rm -f "${SOCKET_FILE}" "${PID_FILE}" "${RUNTIME_DIR}/daemon.ready" 2>/dev/null || true
+			rm -f "${SOCKET_FILE}" "${PID_FILE}" "${RUNTIME_DIR}/daemon.ready" \
+				"${RUNTIME_DIR}/daemon_status" 2>/dev/null || true
+
+			# Also clean stale PIDs from state.json
+			local stale_main_pid stale_anim_pid
+			stale_main_pid=$(read_state '.processes.main_pid // null' 2>/dev/null)
+			stale_anim_pid=$(read_state '.processes.animation_pid // null' 2>/dev/null)
+
+			if [[ "${stale_main_pid}" != "null" || "${stale_anim_pid}" != "null" ]]; then
+				log_info "Cleaning stale PIDs from state.json"
+				update_state_atomic '.status = "stopped" | .processes.main_pid = null | .processes.animation_pid = null' 2>/dev/null || true
+			fi
 		fi
 	fi
 
