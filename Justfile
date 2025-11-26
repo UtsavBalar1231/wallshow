@@ -13,7 +13,6 @@ install:
     cp bin/wallshow ~/.local/bin/
     cp -r lib/* ~/.local/lib/wallshow/
     chmod +x ~/.local/bin/wallshow
-    sed -i 's|if \[\[ -d "$(dirname "$0")/../lib" \]\]; then|if [[ -d "$(dirname "$0")/../lib/core" ]]; then|' ~/.local/bin/wallshow
     sed -i 's|WALLSHOW_LIB="/usr/lib/wallshow"|WALLSHOW_LIB="{{ env_var('HOME') }}/.local/lib/wallshow"|' ~/.local/bin/wallshow
     sed 's|/usr/bin/wallshow|{{ env_var('HOME') }}/.local/bin/wallshow|' systemd/wallshow.service > ~/.config/systemd/user/wallshow.service
     systemctl --user daemon-reload

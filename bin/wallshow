@@ -16,7 +16,7 @@ declare -r SCRIPT_PATH
 # Detect library location (dev vs system install)
 WALLSHOW_LIB="${WALLSHOW_LIB:-}"
 if [[ -z "${WALLSHOW_LIB}" ]]; then
-	if [[ -d "$(dirname "$0")/../lib" ]]; then
+	if [[ -d "$(dirname "$0")/../lib/core" ]]; then
 		# Development mode
 		WALLSHOW_LIB="$(cd "$(dirname "$0")/../lib" && pwd)"
 	else
