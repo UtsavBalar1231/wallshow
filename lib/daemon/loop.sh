@@ -132,17 +132,9 @@ change_wallpaper() {
 
 	log_info "Changing wallpaper to: ${wallpaper}"
 
-	# Check if it's an animated wallpaper
-	if [[ "${wallpaper}" =~ \.(gif)$ ]]; then
-		if ! handle_animated_wallpaper "${wallpaper}"; then
-			log_error "Failed to handle animated wallpaper: ${wallpaper}"
-			return 1
-		fi
-	else
-		if ! set_wallpaper "${wallpaper}"; then
-			log_error "Failed to set wallpaper: ${wallpaper}"
-			return 1
-		fi
+	if ! set_wallpaper "${wallpaper}"; then
+		log_error "Failed to set wallpaper: ${wallpaper}"
+		return 1
 	fi
 
 	# Update state: current wallpaper + history + stats in single jq call

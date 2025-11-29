@@ -31,6 +31,101 @@ detect_available_tools() {
 	get_available_tools_cached
 }
 
+# ============================================================================
+# HELPER FUNCTIONS FOR SMART TOOL SELECTION
+# ============================================================================
+
+is_gif() {
+	local image="$1"
+
+	case "${image,,}" in
+	*.gif) return 0 ;;
+	*) return 1 ;;
+	esac
+}
+
+tool_supports_native_gif() {
+	local tool="$1"
+
+	case "${tool}" in
+	swww | mpvpaper)
+		return 0
+		;;
+	*)
+		return 1
+		;;
+	esac
+}
+
+tool_display_server() {
+	local tool="$1"
+
+	case "${tool}" in
+	swww | swaybg | hyprpaper | mpvpaper | wpaperd)
+		echo "wayland"
+		;;
+	feh | xwallpaper)
+		echo "x11"
+		;;
+	wallutils)
+		echo "both"
+		;;
+	*)
+		echo "unknown"
+		;;
+	esac
+}
+
+select_best_tool() {
+	local image="$1"
+	local available_tools="$2"
+	local display_server="$3"
+
+	local is_animated=false
+	is_gif "${image}" && is_animated=true
+
+	if ${is_animated}; then
+		local gif_tools=("swww" "mpvpaper")
+		for tool in "${gif_tools[@]}"; do
+			if echo "${available_tools}" | grep -qx "${tool}"; then
+				local tool_ds
+				tool_ds=$(tool_display_server "${tool}")
+				if [[ "${tool_ds}" == "${display_server}" ]] || [[ "${tool_ds}" == "both" ]]; then
+					log_debug "Selected ${tool} for native GIF playback"
+					echo "${tool}"
+					return 0
+				fi
+			fi
+		done
+
+		log_warn "No native GIF tools available, will use frame extraction"
+	fi
+
+	local static_chain=()
+	if [[ "${display_server}" == "wayland" ]]; then
+		static_chain=("hyprpaper" "swww" "swaybg" "wallutils")
+	else
+		static_chain=("feh" "xwallpaper" "wallutils")
+	fi
+
+	for tool in "${static_chain[@]}"; do
+		if echo "${available_tools}" | grep -qx "${tool}"; then
+			local tool_ds
+			tool_ds=$(tool_display_server "${tool}")
+			if [[ "${tool_ds}" == "${display_server}" ]] || [[ "${tool_ds}" == "both" ]]; then
+				echo "${tool}"
+				return 0
+			fi
+		fi
+	done
+
+	return 1
+}
+
+# ============================================================================
+# BACKEND IMPLEMENTATIONS
+# ============================================================================
+
 set_wallpaper_swww() {
 	local image="$1"
 	local transition_ms="${2:-}"
@@ -157,6 +252,109 @@ set_wallpaper_xwallpaper() {
 	return 1
 }
 
+set_wallpaper_hyprpaper() {
+	local image="$1"
+
+	if ! pgrep -x "hyprpaper" &>/dev/null; then
+		log_debug "Starting hyprpaper daemon"
+		hyprpaper &
+		local shell_pid=$!
+		sleep 0.3
+
+		local hypr_pid
+		hypr_pid=$(pgrep -n -x "hyprpaper")
+
+		if [[ -z "${hypr_pid}" ]] || ! is_valid_pid "${hypr_pid}"; then
+			log_error "hyprpaper daemon failed to start or PID invalid"
+			kill -TERM "${shell_pid}" 2>/dev/null || true
+			return 1
+		fi
+
+		if ! kill -0 "${hypr_pid}" 2>/dev/null; then
+			log_error "hyprpaper daemon process not found"
+			return 1
+		fi
+
+		update_state_atomic ".processes.hyprpaper_pid = ${hypr_pid}" || {
+			log_error "Failed to store hyprpaper PID - killing to prevent orphan"
+			kill -TERM "${hypr_pid}" 2>/dev/null || true
+			return 1
+		}
+		log_debug "Started hyprpaper with PID: ${hypr_pid}"
+	fi
+
+	# Use reload command (combines preload + set + unload previous)
+	# The "," prefix means "all outputs"
+	if hyprctl hyprpaper reload ",${image}" 2>/dev/null; then
+		log_debug "Set wallpaper with hyprpaper: ${image}"
+		return 0
+	fi
+
+	log_error "hyprpaper failed to set wallpaper"
+	return 1
+}
+
+set_wallpaper_mpvpaper() {
+	local image="$1"
+
+	local our_pids
+	local pids_json
+	if pids_json=$(read_state '.processes.mpvpaper_pids // []'); then
+		our_pids=$(echo "${pids_json}" | jq -r '.[]') || our_pids=""
+	else
+		our_pids=""
+	fi
+
+	if [[ -n "${our_pids}" ]]; then
+		while IFS= read -r pid; do
+			if [[ -n "${pid}" ]] && is_valid_pid "${pid}" && kill -0 "${pid}" 2>/dev/null; then
+				kill -TERM "${pid}" 2>/dev/null || true
+				sleep 0.2
+				if kill -0 "${pid}" 2>/dev/null; then
+					kill -KILL "${pid}" 2>/dev/null || true
+				fi
+			fi
+		done <<<"${our_pids}"
+	fi
+
+	mpvpaper --fork --layer background \
+		-o "no-audio --loop-file=inf" \
+		'*' "${image}" &
+	local shell_pid=$!
+	sleep 0.3
+
+	local mpv_pid
+	mpv_pid=$(pgrep -n -x "mpvpaper")
+
+	if [[ -z "${mpv_pid}" ]] || ! is_valid_pid "${mpv_pid}"; then
+		log_error "mpvpaper daemon failed to start or PID invalid"
+		kill -TERM "${shell_pid}" 2>/dev/null || true
+		return 1
+	fi
+
+	if ! kill -0 "${mpv_pid}" 2>/dev/null; then
+		log_error "mpvpaper daemon process not found"
+		return 1
+	fi
+
+	update_state_atomic ".processes.mpvpaper_pids = [${mpv_pid}]"
+
+	log_debug "Set wallpaper with mpvpaper: ${image} (PID: ${mpv_pid})"
+	return 0
+}
+
+set_wallpaper_wallutils() {
+	local image="$1"
+
+	if setwallpaper -m fill "${image}" 2>/dev/null; then
+		log_debug "Set wallpaper with wallutils: ${image}"
+		return 0
+	fi
+
+	log_error "wallutils failed to set wallpaper"
+	return 1
+}
+
 # ============================================================================
 # WALLPAPER SETTING (with fallback chain)
 # ============================================================================
@@ -190,6 +388,9 @@ _dispatch_tool() {
 	case "${tool}" in
 	swww) _try_tool "swww" set_wallpaper_swww "${image}" "${transition_ms}" ;;
 	swaybg) _try_tool "swaybg" set_wallpaper_swaybg "${image}" ;;
+	hyprpaper) _try_tool "hyprpaper" set_wallpaper_hyprpaper "${image}" ;;
+	mpvpaper) _try_tool "mpvpaper" set_wallpaper_mpvpaper "${image}" ;;
+	wallutils) _try_tool "wallutils" set_wallpaper_wallutils "${image}" ;;
 	feh) _try_tool "feh" set_wallpaper_feh "${image}" ;;
 	xwallpaper) _try_tool "xwallpaper" set_wallpaper_xwallpaper "${image}" ;;
 	*)
@@ -222,48 +423,72 @@ set_wallpaper() {
 	display_server=$(detect_display_server)
 	log_debug "Display server: ${display_server}"
 
-	# Try preferred tool first
+	local available_tools
+	available_tools=$(detect_available_tools)
+
 	local preferred_tool
-	preferred_tool=$(get_config '.tools.preferred_static' 'auto')
-	if [[ "${preferred_tool}" != "auto" ]] && command -v "${preferred_tool}" &>/dev/null; then
-		if _dispatch_tool "${preferred_tool}" "${image}" "${transition_ms}"; then
-			log_info "Set wallpaper with ${preferred_tool}: ${image}"
-			return 0
-		fi
+	if is_gif "${image}"; then
+		preferred_tool=$(get_config '.tools.preferred_animated' 'auto')
+	else
+		preferred_tool=$(get_config '.tools.preferred_static' 'auto')
 	fi
 
-	# Display server fallback chain
+	if [[ "${preferred_tool}" != "auto" ]] && echo "${available_tools}" | grep -qx "${preferred_tool}"; then
+		log_debug "Trying user's preferred tool: ${preferred_tool}"
+		if _dispatch_tool "${preferred_tool}" "${image}" "${transition_ms}"; then
+			log_info "Set wallpaper with preferred tool ${preferred_tool}: ${image}"
+			return 0
+		fi
+		log_warn "Preferred tool ${preferred_tool} failed, falling back to auto-selection"
+	fi
+
+	local selected_tool
+	selected_tool=$(select_best_tool "${image}" "${available_tools}" "${display_server}")
+
+	if [[ -z "${selected_tool}" ]]; then
+		log_error "No suitable wallpaper tools available for ${display_server}"
+		return 1
+	fi
+
+	if is_gif "${image}" && ! tool_supports_native_gif "${selected_tool}"; then
+		log_warn "Using static-only tool '${selected_tool}' with GIF - frame extraction will be used"
+		log_info "For better performance, consider installing swww or mpvpaper"
+	fi
+
+	if _dispatch_tool "${selected_tool}" "${image}" "${transition_ms}"; then
+		log_info "Set wallpaper with ${selected_tool}: ${image}"
+		return 0
+	fi
+
+	log_warn "Primary tool ${selected_tool} failed, trying fallbacks"
+
 	local fallback_tools=()
 	if [[ "${display_server}" == "wayland" ]]; then
-		fallback_tools=("swww" "swaybg")
+		fallback_tools=("swww" "hyprpaper" "swaybg" "wallutils")
 	else
-		fallback_tools=("feh" "xwallpaper")
+		fallback_tools=("feh" "xwallpaper" "wallutils")
 	fi
 
 	for tool in "${fallback_tools[@]}"; do
+		if printf '%s\n' "${_TRIED_TOOLS[@]}" | grep -qx "${tool}"; then
+			continue
+		fi
+
+		if ! echo "${available_tools}" | grep -qx "${tool}"; then
+			continue
+		fi
+
 		if _dispatch_tool "${tool}" "${image}" "${transition_ms}"; then
 			log_info "Set wallpaper with ${tool}: ${image}"
 			return 0
 		fi
 	done
 
-	# Last resort: all available tools
-	local available_tools
-	available_tools=$(detect_available_tools)
-	while IFS= read -r tool; do
-		if _dispatch_tool "${tool}" "${image}" "${transition_ms}"; then
-			log_info "Set wallpaper with ${tool}: ${image}"
-			return 0
-		fi
-	done <<<"${available_tools}"
-
-	# All tools failed
 	log_error "Failed to set wallpaper with any available tool"
 	log_error "Tools attempted: ${_TRIED_TOOLS[*]:-none}"
-	log_error "Last error: ${_LAST_ERROR:-unknown}"
 
 	local error_summary
-	error_summary=$(printf '%s' "Tools tried: ${_TRIED_TOOLS[*]:-none}; Last: ${_LAST_ERROR:-unknown}" | jq -Rs .)
+	error_summary=$(printf '%s' "Tools tried: ${_TRIED_TOOLS[*]:-none}" | jq -Rs .)
 	update_state_atomic ".last_error = ${error_summary}" 2>/dev/null || true
 
 	return 1

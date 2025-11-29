@@ -101,7 +101,9 @@ init_state() {
             "main_pid": null,
             "animation_pid": null,
             "swaybg_pids": [],
-            "swww_daemon_pid": null
+            "swww_daemon_pid": null,
+            "hyprpaper_pid": null,
+            "mpvpaper_pids": []
         }
     }'
 

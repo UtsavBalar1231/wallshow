@@ -63,8 +63,7 @@ declare -gr DEFAULT_CONFIG='{
   },
   "tools": {
     "preferred_static": "auto",
-    "preferred_animated": "auto",
-    "fallback_chain": ["swww", "swaybg", "feh", "xwallpaper"]
+    "preferred_animated": "auto"
   }
 }'
 
@@ -99,7 +98,7 @@ declare -gri LIMIT_STATE_LOCK_TIMEOUT=5
 # SUPPORTED TOOLS
 # ============================================================================
 
-declare -gra WALLPAPER_TOOLS=("swww" "swaybg" "hyprpaper" "mpvpaper" "feh" "xwallpaper" "nitrogen")
+declare -gra WALLPAPER_TOOLS=("swww" "swaybg" "hyprpaper" "mpvpaper" "wallutils" "feh" "xwallpaper")
 
 # ============================================================================
 # EXIT CODES

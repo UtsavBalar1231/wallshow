@@ -58,6 +58,35 @@ cleanup_all_processes() {
 		kill -KILL "${swww_daemon_pid}" 2>/dev/null || true
 	fi
 
+	# Stop hyprpaper process
+	local hyprpaper_pid
+	hyprpaper_pid=$(read_state '.processes.hyprpaper_pid // null')
+	if [[ "${hyprpaper_pid}" != "null" && -n "${hyprpaper_pid}" && "${hyprpaper_pid}" =~ ^[0-9]+$ ]] && kill -0 "${hyprpaper_pid}" 2>/dev/null; then
+		log_debug "Cleaning up hyprpaper process (PID: ${hyprpaper_pid})"
+		kill -TERM "${hyprpaper_pid}" 2>/dev/null || true
+		sleep 0.2
+		kill -KILL "${hyprpaper_pid}" 2>/dev/null || true
+	fi
+
+	# Stop mpvpaper processes
+	local mpvpaper_pids
+	local pids_json
+	if pids_json=$(read_state '.processes.mpvpaper_pids // []'); then
+		mpvpaper_pids=$(echo "${pids_json}" | jq -r '.[]') || mpvpaper_pids=""
+	else
+		mpvpaper_pids=""
+	fi
+	if [[ -n "${mpvpaper_pids}" ]]; then
+		while IFS= read -r pid; do
+			if [[ -n "${pid}" && "${pid}" =~ ^[0-9]+$ ]] && kill -0 "${pid}" 2>/dev/null; then
+				log_debug "Cleaning up mpvpaper process (PID: ${pid})"
+				kill -TERM "${pid}" 2>/dev/null || true
+				sleep 0.1
+				kill -KILL "${pid}" 2>/dev/null || true
+			fi
+		done <<<"${mpvpaper_pids}"
+	fi
+
 	# Stop socat socket process
 	if [[ -f "${RUNTIME_DIR}/socket.pid" ]]; then
 		local socat_pid

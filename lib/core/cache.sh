@@ -98,6 +98,19 @@ cache_available_tools() {
 	_AVAILABLE_TOOLS_CACHE=()
 	for tool in "${WALLPAPER_TOOLS[@]}"; do
 		if command -v "${tool}" &>/dev/null; then
+			case "${tool}" in
+			hyprpaper)
+				command -v hyprctl &>/dev/null || continue
+				;;
+			mpvpaper)
+				command -v mpv &>/dev/null || continue
+				;;
+			wallutils)
+				command -v setwallpaper &>/dev/null || continue
+				;;
+			*) ;;
+			esac
+
 			_AVAILABLE_TOOLS_CACHE+=("${tool}")
 		fi
 	done
