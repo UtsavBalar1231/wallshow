@@ -404,10 +404,6 @@ set_wallpaper() {
 	local image="$1"
 	local transition_ms="${2:-}"
 
-	# Reset tracking state
-	_TRIED_TOOLS=()
-	_LAST_ERROR=""
-
 	# Validate image path
 	image=$(validate_path "${image}" "") || {
 		log_error "Invalid image path: ${image}"
@@ -419,77 +415,40 @@ set_wallpaper() {
 		return 1
 	fi
 
-	local display_server
-	display_server=$(detect_display_server)
-	log_debug "Display server: ${display_server}"
+	# Get pre-resolved tool from session context (O(1) lookup)
+	local tool
+	tool=$(get_session_tool "${image}")
 
-	local available_tools
-	available_tools=$(detect_available_tools)
-
-	local preferred_tool
-	if is_gif "${image}"; then
-		preferred_tool=$(get_config '.tools.preferred_animated' 'auto')
-	else
-		preferred_tool=$(get_config '.tools.preferred_static' 'auto')
-	fi
-
-	if [[ "${preferred_tool}" != "auto" ]] && echo "${available_tools}" | grep -qx "${preferred_tool}"; then
-		log_debug "Trying user's preferred tool: ${preferred_tool}"
-		if _dispatch_tool "${preferred_tool}" "${image}" "${transition_ms}"; then
-			log_info "Set wallpaper with preferred tool ${preferred_tool}: ${image}"
-			return 0
-		fi
-		log_warn "Preferred tool ${preferred_tool} failed, falling back to auto-selection"
-	fi
-
-	local selected_tool
-	selected_tool=$(select_best_tool "${image}" "${available_tools}" "${display_server}")
-
-	if [[ -z "${selected_tool}" ]]; then
-		log_error "No suitable wallpaper tools available for ${display_server}"
+	if [[ -z "${tool}" ]]; then
+		log_error "No suitable wallpaper tool available"
 		return 1
 	fi
 
-	if is_gif "${image}" && ! tool_supports_native_gif "${selected_tool}"; then
-		log_warn "Using static-only tool '${selected_tool}' with GIF - frame extraction will be used"
-		log_info "For better performance, consider installing swww or mpvpaper"
+	# Log GIF frame extraction warning once (not per frame)
+	if is_gif "${image}" && ! tool_supports_native_gif "${tool}"; then
+		log_warn "Using static-only tool '${tool}' with GIF - frame extraction will be used"
 	fi
 
-	if _dispatch_tool "${selected_tool}" "${image}" "${transition_ms}"; then
-		log_info "Set wallpaper with ${selected_tool}: ${image}"
+	# Dispatch to resolved tool
+	if _dispatch_tool "${tool}" "${image}" "${transition_ms}"; then
+		log_info "Set wallpaper with ${tool}: ${image}"
 		return 0
 	fi
 
-	log_warn "Primary tool ${selected_tool} failed, trying fallbacks"
+	# Tool failed - try fallback (rare: tool became unavailable mid-session)
+	log_warn "Session tool ${tool} failed, attempting fallback"
+	invalidate_session_context
 
-	local fallback_tools=()
-	if [[ "${display_server}" == "wayland" ]]; then
-		fallback_tools=("swww" "hyprpaper" "swaybg" "wallutils")
-	else
-		fallback_tools=("feh" "xwallpaper" "wallutils")
-	fi
+	local fallback_tool
+	fallback_tool=$(get_session_tool "${image}")
 
-	for tool in "${fallback_tools[@]}"; do
-		if printf '%s\n' "${_TRIED_TOOLS[@]}" | grep -qx "${tool}"; then
-			continue
-		fi
-
-		if ! echo "${available_tools}" | grep -qx "${tool}"; then
-			continue
-		fi
-
-		if _dispatch_tool "${tool}" "${image}" "${transition_ms}"; then
-			log_info "Set wallpaper with ${tool}: ${image}"
+	if [[ -n "${fallback_tool}" ]] && [[ "${fallback_tool}" != "${tool}" ]]; then
+		if _dispatch_tool "${fallback_tool}" "${image}" "${transition_ms}"; then
+			log_info "Set wallpaper with fallback ${fallback_tool}: ${image}"
 			return 0
 		fi
-	done
+	fi
 
 	log_error "Failed to set wallpaper with any available tool"
-	log_error "Tools attempted: ${_TRIED_TOOLS[*]:-none}"
-
-	local error_summary
-	error_summary=$(printf '%s' "Tools tried: ${_TRIED_TOOLS[*]:-none}" | jq -Rs .)
-	update_state_atomic ".last_error = ${error_summary}" 2>/dev/null || true
-
 	return 1
 }

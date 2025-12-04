@@ -59,6 +59,7 @@ _source_module "${WALLSHOW_LIB}/system/init.sh"
 _source_module "${WALLSHOW_LIB}/wallpaper/discovery.sh"
 _source_module "${WALLSHOW_LIB}/wallpaper/selection.sh"
 _source_module "${WALLSHOW_LIB}/wallpaper/backends.sh"
+_source_module "${WALLSHOW_LIB}/wallpaper/session.sh"
 
 # Animation modules (depend on wallpaper)
 _source_module "${WALLSHOW_LIB}/animation/gif.sh"

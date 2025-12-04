@@ -96,6 +96,9 @@ daemonize() {
 			# Initialize caches (MUST be in main shell context, not in subshell)
 			init_caches
 
+			# Initialize session context (resolves wallpaper tools once)
+			init_session_context
+
 			# Initialize status file for animation subprocess
 			DAEMON_STATUS_FILE="${RUNTIME_DIR}/daemon_status"
 			DAEMON_STATUS="running"
@@ -143,6 +146,7 @@ handle_signal() {
 	HUP)
 		log_info "Reloading configuration..."
 		invalidate_all_caches
+		invalidate_session_context
 		reload_config
 		;;
 	USR1)
