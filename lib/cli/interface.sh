@@ -52,6 +52,107 @@ EOF
 # STALE STATE DETECTION & CLEANUP
 # ============================================================================
 
+# Clean up stale wallpaper backend PIDs
+# Returns "true" if any stale backends were found
+_cleanup_backend_pids() {
+	local stale_backends=false
+	local jq_cleanup=""
+
+	# Check swaybg PIDs
+	local swaybg_pids_json
+	swaybg_pids_json=$(read_state '.processes.swaybg_pids // []')
+	local swaybg_pids
+	swaybg_pids=$(echo "${swaybg_pids_json}" | jq -r '.[]' 2>/dev/null) || swaybg_pids=""
+
+	if [[ -n "${swaybg_pids}" ]]; then
+		local live_pids=()
+		local found_stale=false
+		while IFS= read -r pid; do
+			if [[ -n "${pid}" ]] && is_valid_pid "${pid}" && kill -0 "${pid}" 2>/dev/null; then
+				live_pids+=("${pid}")
+			else
+				log_debug "Stale swaybg PID ${pid} detected"
+				found_stale=true
+				stale_backends=true
+			fi
+		done <<<"${swaybg_pids}"
+		if ${found_stale}; then
+			if [[ ${#live_pids[@]} -eq 0 ]]; then
+				jq_cleanup="${jq_cleanup} | .processes.swaybg_pids = []"
+			else
+				local pids_str
+				pids_str=$(
+					IFS=,
+					echo "${live_pids[*]}"
+				)
+				jq_cleanup="${jq_cleanup} | .processes.swaybg_pids = [${pids_str}]"
+			fi
+		fi
+	fi
+
+	# Check swww daemon PID
+	local swww_pid
+	swww_pid=$(read_state '.processes.swww_daemon_pid // null')
+	if [[ "${swww_pid}" != "null" && -n "${swww_pid}" ]]; then
+		if ! is_valid_pid "${swww_pid}" || ! kill -0 "${swww_pid}" 2>/dev/null; then
+			log_debug "Stale swww-daemon PID ${swww_pid} detected"
+			jq_cleanup="${jq_cleanup} | .processes.swww_daemon_pid = null"
+			stale_backends=true
+		fi
+	fi
+
+	# Check hyprpaper PID
+	local hypr_pid
+	hypr_pid=$(read_state '.processes.hyprpaper_pid // null')
+	if [[ "${hypr_pid}" != "null" && -n "${hypr_pid}" ]]; then
+		if ! is_valid_pid "${hypr_pid}" || ! kill -0 "${hypr_pid}" 2>/dev/null; then
+			log_debug "Stale hyprpaper PID ${hypr_pid} detected"
+			jq_cleanup="${jq_cleanup} | .processes.hyprpaper_pid = null"
+			stale_backends=true
+		fi
+	fi
+
+	# Check mpvpaper PIDs
+	local mpv_pids_json
+	mpv_pids_json=$(read_state '.processes.mpvpaper_pids // []')
+	local mpv_pids
+	mpv_pids=$(echo "${mpv_pids_json}" | jq -r '.[]' 2>/dev/null) || mpv_pids=""
+
+	if [[ -n "${mpv_pids}" ]]; then
+		local live_mpv_pids=()
+		local found_mpv_stale=false
+		while IFS= read -r pid; do
+			if [[ -n "${pid}" ]] && is_valid_pid "${pid}" && kill -0 "${pid}" 2>/dev/null; then
+				live_mpv_pids+=("${pid}")
+			else
+				log_debug "Stale mpvpaper PID ${pid} detected"
+				found_mpv_stale=true
+				stale_backends=true
+			fi
+		done <<<"${mpv_pids}"
+		if ${found_mpv_stale}; then
+			if [[ ${#live_mpv_pids[@]} -eq 0 ]]; then
+				jq_cleanup="${jq_cleanup} | .processes.mpvpaper_pids = []"
+			else
+				local mpv_pids_str
+				mpv_pids_str=$(
+					IFS=,
+					echo "${live_mpv_pids[*]}"
+				)
+				jq_cleanup="${jq_cleanup} | .processes.mpvpaper_pids = [${mpv_pids_str}]"
+			fi
+		fi
+	fi
+
+	# Apply cleanup if needed
+	if [[ -n "${jq_cleanup}" ]]; then
+		jq_cleanup="${jq_cleanup# | }" # Remove leading " | "
+		update_state_atomic "${jq_cleanup}" 2>/dev/null || true
+	fi
+
+	echo "${stale_backends}"
+}
+
 # Detect and auto-cleanup stale daemon state
 # Called before displaying status to ensure accuracy
 # Also useful for daemon startup to clean previous crash remnants
@@ -101,6 +202,9 @@ _cleanup_stale_state() {
 
 		update_state_atomic "${jq_update}" 2>/dev/null || true
 	fi
+
+	# Also cleanup stale backend PIDs (swaybg, swww, hyprpaper, mpvpaper)
+	_cleanup_backend_pids >/dev/null
 }
 
 show_info() {
@@ -196,6 +300,43 @@ show_status() {
 		local uptime_str
 		uptime_str=$(ps -o etime= -p "${main_pid}" 2>/dev/null | tr -d ' ')
 		[[ -n "${uptime_str}" ]] && printf "Uptime:     %s\n" "${uptime_str}"
+	fi
+
+	# Backend health check - warn if daemon running but backend dead
+	if [[ "${status}" == "running" || "${status}" == "paused" ]]; then
+		local backend_name=""
+		local backend_running=false
+
+		# Determine which backend should be active based on state
+		local swaybg_pids swww_pid hypr_pid mpv_pids
+		swaybg_pids=$(read_state '.processes.swaybg_pids // []' | jq -r '.[]' 2>/dev/null) || swaybg_pids=""
+		swww_pid=$(read_state '.processes.swww_daemon_pid // null')
+		hypr_pid=$(read_state '.processes.hyprpaper_pid // null')
+		mpv_pids=$(read_state '.processes.mpvpaper_pids // []' | jq -r '.[]' 2>/dev/null) || mpv_pids=""
+
+		if [[ -n "${swaybg_pids}" ]]; then
+			backend_name="swaybg"
+			while IFS= read -r pid; do
+				[[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null && backend_running=true && break
+			done <<<"${swaybg_pids}"
+		elif [[ "${swww_pid}" != "null" && -n "${swww_pid}" ]]; then
+			backend_name="swww"
+			kill -0 "${swww_pid}" 2>/dev/null && backend_running=true
+		elif [[ "${hypr_pid}" != "null" && -n "${hypr_pid}" ]]; then
+			backend_name="hyprpaper"
+			kill -0 "${hypr_pid}" 2>/dev/null && backend_running=true
+		elif [[ -n "${mpv_pids}" ]]; then
+			backend_name="mpvpaper"
+			while IFS= read -r pid; do
+				[[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null && backend_running=true && break
+			done <<<"${mpv_pids}"
+		fi
+
+		if [[ -n "${backend_name}" ]] && ! ${backend_running}; then
+			printf "Backend:    \033[31mDEAD\033[0m (was %s) - run 'wallshow restart'\n" "${backend_name}"
+		elif [[ -n "${backend_name}" ]]; then
+			printf "Backend:    %s\n" "${backend_name}"
+		fi
 	fi
 
 	# Current wallpaper (basename only for readability)

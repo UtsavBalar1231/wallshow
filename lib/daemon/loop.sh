@@ -240,6 +240,90 @@ _validate_animation_pid() {
 	fi
 }
 
+# Validate wallpaper backend health and auto-recover if backend died
+_validate_backend_health() {
+	local backend_dead=false
+	local jq_cleanup=""
+
+	# Check swaybg PIDs
+	local swaybg_pids_json
+	swaybg_pids_json=$(read_state '.processes.swaybg_pids // []')
+	local swaybg_pids
+	swaybg_pids=$(echo "${swaybg_pids_json}" | jq -r '.[]' 2>/dev/null) || swaybg_pids=""
+
+	if [[ -n "${swaybg_pids}" ]]; then
+		while IFS= read -r pid; do
+			if [[ -n "${pid}" ]] && ! kill -0 "${pid}" 2>/dev/null; then
+				log_warn "Wallpaper backend swaybg (PID ${pid}) died"
+				backend_dead=true
+				jq_cleanup="${jq_cleanup} | .processes.swaybg_pids = []"
+				break
+			fi
+		done <<<"${swaybg_pids}"
+	fi
+
+	# Check swww daemon PID
+	local swww_pid
+	swww_pid=$(read_state '.processes.swww_daemon_pid // null')
+	if [[ "${swww_pid}" != "null" && -n "${swww_pid}" ]]; then
+		if ! kill -0 "${swww_pid}" 2>/dev/null; then
+			log_warn "Wallpaper backend swww-daemon (PID ${swww_pid}) died"
+			backend_dead=true
+			jq_cleanup="${jq_cleanup} | .processes.swww_daemon_pid = null"
+		fi
+	fi
+
+	# Check hyprpaper PID
+	local hypr_pid
+	hypr_pid=$(read_state '.processes.hyprpaper_pid // null')
+	if [[ "${hypr_pid}" != "null" && -n "${hypr_pid}" ]]; then
+		if ! kill -0 "${hypr_pid}" 2>/dev/null; then
+			log_warn "Wallpaper backend hyprpaper (PID ${hypr_pid}) died"
+			backend_dead=true
+			jq_cleanup="${jq_cleanup} | .processes.hyprpaper_pid = null"
+		fi
+	fi
+
+	# Check mpvpaper PIDs
+	local mpv_pids_json
+	mpv_pids_json=$(read_state '.processes.mpvpaper_pids // []')
+	local mpv_pids
+	mpv_pids=$(echo "${mpv_pids_json}" | jq -r '.[]' 2>/dev/null) || mpv_pids=""
+
+	if [[ -n "${mpv_pids}" ]]; then
+		while IFS= read -r pid; do
+			if [[ -n "${pid}" ]] && ! kill -0 "${pid}" 2>/dev/null; then
+				log_warn "Wallpaper backend mpvpaper (PID ${pid}) died"
+				backend_dead=true
+				jq_cleanup="${jq_cleanup} | .processes.mpvpaper_pids = []"
+				break
+			fi
+		done <<<"${mpv_pids}"
+	fi
+
+	# Auto-recover if backend died
+	if ${backend_dead}; then
+		log_warn "Backend died, triggering wallpaper refresh"
+
+		# Clean stale PIDs first
+		if [[ -n "${jq_cleanup}" ]]; then
+			jq_cleanup="${jq_cleanup# | }" # Remove leading " | "
+			update_state_atomic "${jq_cleanup}" 2>/dev/null || true
+		fi
+
+		# Re-set current wallpaper to spawn new backend
+		local current
+		current=$(read_state '.current_wallpaper // null')
+		if [[ "${current}" != "null" && -f "${current}" ]]; then
+			if set_wallpaper "${current}"; then
+				log_info "Successfully recovered wallpaper backend"
+			else
+				log_error "Failed to recover wallpaper backend"
+			fi
+		fi
+	fi
+}
+
 # ============================================================================
 # MAIN LOOP
 # ============================================================================
@@ -284,7 +368,15 @@ main_loop() {
 
 		# Skip processing if paused (fast check - no I/O)
 		if [[ "${DAEMON_STATUS}" == "paused" ]]; then
-			sleep 60
+			# Sleep in 1-second intervals to allow signal processing
+			local pause_sleep=0
+			while [[ ${pause_sleep} -lt 60 ]]; do
+				sleep 1
+				pause_sleep=$((pause_sleep + 1))
+				# Check for resume/stop between sleeps
+				[[ "${RESUME_REQUESTED}" == "true" ]] && break
+				[[ "${STOP_REQUESTED}" == "true" ]] && break
+			done
 			continue
 		fi
 
@@ -301,9 +393,10 @@ main_loop() {
 			fi
 		fi
 
-		# Periodic validation of animation PID
+		# Periodic validation of animation PID and backend health
 		if [[ $((now - last_pid_check)) -ge ${INTERVAL_PID_CHECK} ]]; then
 			_validate_animation_pid
+			_validate_backend_health
 			last_pid_check=${now}
 		fi
 
@@ -314,8 +407,17 @@ main_loop() {
 			last_cleanup=${now}
 		fi
 
-		# Sleep 60s (signals wake us immediately)
-		sleep 60
+		# Sleep in 1-second intervals to allow signal processing
+		# Bash traps are only processed between commands, not during sleep
+		local sleep_count=0
+		while [[ ${sleep_count} -lt 60 ]]; do
+			sleep 1
+			sleep_count=$((sleep_count + 1))
+			# Check for any signal request between sleeps (fast response)
+			[[ "${STOP_REQUESTED}" == "true" ]] && break
+			[[ "${PAUSE_REQUESTED}" == "true" ]] && break
+			[[ "${RESUME_REQUESTED}" == "true" ]] && break
+		done
 	done
 
 	log_info "Main loop ended"

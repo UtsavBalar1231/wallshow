@@ -138,7 +138,11 @@ set_wallpaper_swww() {
 	# Ensure daemon is running
 	if ! pgrep -x "swww-daemon" &>/dev/null; then
 		log_debug "Starting swww-daemon"
-		swww-daemon --format argb &
+		# Close lock FD in subshell to prevent swww-daemon from holding instance lock
+		(
+			[[ -n "${LOCK_FD}" ]] && exec {LOCK_FD}>&- 2>/dev/null
+			exec swww-daemon --format argb
+		) &
 		local swww_pid=$!
 		sleep 0.3 # Give daemon time to start
 
@@ -196,7 +200,11 @@ set_wallpaper_swaybg() {
 	fi
 
 	# Start new instance
-	swaybg -i "${image}" -m fill &
+	# Close lock FD in subshell to prevent swaybg from holding instance lock
+	(
+		[[ -n "${LOCK_FD}" ]] && exec {LOCK_FD}>&- 2>/dev/null
+		exec swaybg -i "${image}" -m fill
+	) &
 	local new_pid=$!
 
 	# Update state with new PID
@@ -257,7 +265,11 @@ set_wallpaper_hyprpaper() {
 
 	if ! pgrep -x "hyprpaper" &>/dev/null; then
 		log_debug "Starting hyprpaper daemon"
-		hyprpaper &
+		# Close lock FD in subshell to prevent hyprpaper from holding instance lock
+		(
+			[[ -n "${LOCK_FD}" ]] && exec {LOCK_FD}>&- 2>/dev/null
+			exec hyprpaper
+		) &
 		local shell_pid=$!
 		sleep 0.3
 
@@ -317,9 +329,13 @@ set_wallpaper_mpvpaper() {
 		done <<<"${our_pids}"
 	fi
 
-	mpvpaper --fork --layer background \
-		-o "no-audio --loop-file=inf" \
-		'*' "${image}" &
+	# Close lock FD in subshell to prevent mpvpaper from holding instance lock
+	(
+		[[ -n "${LOCK_FD}" ]] && exec {LOCK_FD}>&- 2>/dev/null
+		exec mpvpaper --fork --layer background \
+			-o "no-audio --loop-file=inf" \
+			'*' "${image}"
+	) &
 	local shell_pid=$!
 	sleep 0.3
 

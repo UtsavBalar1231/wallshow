@@ -92,7 +92,13 @@ create_socket() {
 	fi
 
 	# Start socat and capture its PID reliably
-	socat UNIX-LISTEN:"${SOCKET_FILE}",fork EXEC:"${SCRIPT_PATH} --socket-handler" &
+	# CRITICAL: Close lock FD in subshell to prevent socat from holding the instance lock
+	# This allows daemon restart after force-kill without stale lock issues
+	(
+		# Close inherited lock FD so socat doesn't hold the instance lock
+		[[ -n "${LOCK_FD}" ]] && exec {LOCK_FD}>&- 2>/dev/null
+		exec socat UNIX-LISTEN:"${SOCKET_FILE}",fork EXEC:"${SCRIPT_PATH} --socket-handler"
+	) &
 	local socat_pid=$!
 
 	# Brief wait to ensure socat started
