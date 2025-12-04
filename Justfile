@@ -100,6 +100,44 @@ clean:
     rm -rf rpm/BUILD rpm/RPMS rpm/SRPMS
     @echo "✓ Cleaned"
 
+# Maintenance
+
+# Rotate logs manually (keeps 5 rotated files)
+rotate-logs:
+    #!/usr/bin/env bash
+    LOG_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/wallshow/wallpaper.log"
+    if [[ -f "$LOG_FILE" ]]; then
+        for i in 4 3 2 1; do
+            [[ -f "$LOG_FILE.$i" ]] && mv -f "$LOG_FILE.$i" "$LOG_FILE.$((i+1))"
+        done
+        mv -f "$LOG_FILE" "$LOG_FILE.1"
+        touch "$LOG_FILE"
+        chmod 600 "$LOG_FILE"
+        echo "✓ Rotated logs"
+    else
+        echo "No log file found at $LOG_FILE"
+    fi
+
+# Clear all logs
+clear-logs:
+    #!/usr/bin/env bash
+    LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/wallshow"
+    rm -f "$LOG_DIR"/wallpaper.log* 2>/dev/null
+    touch "$LOG_DIR/wallpaper.log"
+    chmod 600 "$LOG_DIR/wallpaper.log"
+    echo "✓ Cleared all logs"
+
+# Show log file size
+log-size:
+    #!/usr/bin/env bash
+    LOG_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/wallshow/wallpaper.log"
+    if [[ -f "$LOG_FILE" ]]; then
+        ls -lh "$LOG_FILE" | awk '{print "Log size: " $5}'
+        ls -lh "$LOG_FILE".* 2>/dev/null | awk '{print "  " $9 ": " $5}' || true
+    else
+        echo "No log file found"
+    fi
+
 # Development helpers
 
 # Run wallshow from local directory (dev mode)

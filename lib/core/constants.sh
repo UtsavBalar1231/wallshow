@@ -58,7 +58,7 @@ declare -gr DEFAULT_CONFIG='{
     "exclude_patterns": ["*.tmp", ".*"],
     "battery_optimization": true,
     "max_cache_size_mb": 500,
-    "max_log_size_kb": 1024,
+    "max_log_size_kb": 512,
     "debug": false
   },
   "tools": {
