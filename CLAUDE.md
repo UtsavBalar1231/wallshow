@@ -24,6 +24,18 @@ jq '.' ~/.local/state/wallshow/state.json      # Inspect state
 
 # Building
 just build-all        # Build all packages (Debian, Arch, RPM)
+
+# Additional
+just format-check     # Check shfmt formatting
+just version-bump X   # Update version to X in all files
+just clean            # Clean build artifacts
+just pre-commit       # Run pre-commit hooks manually
+just info             # Show module structure info
+
+# Log management
+just log-size         # Show log file sizes
+just rotate-logs      # Manually rotate logs
+just clear-logs       # Clear all logs
 ```
 
 **Key Files to Modify:**
@@ -36,6 +48,7 @@ just build-all        # Build all packages (Debian, Arch, RPM)
 | IPC commands | `lib/daemon/ipc.sh:handle_socket_command()` |
 | CLI commands | `lib/cli/commands.sh:main()` |
 | Wallpaper backends | `lib/wallpaper/backends.sh` |
+| Session tool resolution | `lib/wallpaper/session.sh` |
 
 ## Core Architecture
 
@@ -43,16 +56,20 @@ just build-all        # Build all packages (Debian, Arch, RPM)
 
 Modules live in `lib/` organized by feature: `core/`, `system/`, `wallpaper/`, `animation/`, `daemon/`, `cli/`. Entry point is `bin/wallshow`.
 
+### Wallpaper Utilities Documentation
+
+See `docs/wallpaper-utilities/` for comprehensive documentation on all supported and planned wallpaper backends (swww, swaybg, hyprpaper, mpvpaper, feh, xwallpaper, wallutils), including GIF support matrices, recommended fallback chains, and CLI examples.
+
 ### Module Dependencies
 
 Modules are sourced in strict dependency order in `bin/wallshow`:
 
-1. **core** modules (no dependencies)
-2. **system** modules (depend on core)
-3. **wallpaper** modules (depend on core + system)
-4. **animation** modules (depend on core + wallpaper)
-5. **daemon** modules (depend on all previous)
-6. **cli** modules (depend on all previous)
+1. **core** modules (no dependencies): constants, logging, cache, state, config
+2. **system** modules (depend on core): paths, locking, init
+3. **wallpaper** modules (depend on core + system): discovery, selection, backends, session
+4. **animation** modules (depend on wallpaper): gif, playback
+5. **daemon** modules (depend on all previous): process, ipc, loop
+6. **cli** modules (depend on all previous): interface, commands
 
 **Important**: When adding new functionality, respect this dependency hierarchy.
 
@@ -77,13 +94,23 @@ All paths follow XDG Base Directory specification:
 - Cache: `$XDG_CACHE_HOME/wallshow/` (GIF frames, wallpaper lists)
 - Runtime: `$XDG_RUNTIME_DIR/wallshow/` (PID, socket, lock)
 
+### Session Context (Tool Resolution)
+Tool selection happens **once at daemon startup** via `init_session_context()`:
+1. Detect display server (Wayland vs X11) - never changes during session
+2. Detect available tools - cached for session
+3. Resolve static tool (validates preferred tool against display server)
+4. Resolve GIF tool (validates preferred tool against display server)
+5. Store in `SESSION_CONTEXT` associative array
+
+All subsequent `set_wallpaper()` calls use O(1) lookup via `get_session_tool()`.
+Session invalidated on config reload (SIGHUP) to pick up tool preference changes.
+
 ### Wallpaper Setting Strategy
 Multi-tool support with intelligent fallback:
-1. Try user-configured preferred tool (`config.tools.preferred_static`)
-2. Display server detection (Wayland vs X11)
-3. Fallback chain based on environment (swww → swaybg for Wayland, feh → xwallpaper for X11)
-4. Each tool has dedicated `set_wallpaper_<tool>()` function
-5. Tool availability cached via `detect_available_tools()`
+1. Get pre-resolved tool from session context (`get_session_tool()`)
+2. Dispatch to tool-specific function (`set_wallpaper_<tool>()`)
+3. On failure, invalidate session and re-resolve (rare: tool became unavailable)
+4. Each tool has dedicated `set_wallpaper_<tool>()` function in `backends.sh`
 
 ### GIF Animation
 - Frame extraction: Uses ImageMagick (convert/magick) to split GIFs into PNG frames
@@ -239,7 +266,7 @@ The config.json schema:
     "exclude_patterns": ["*.tmp", ".*"],
     "battery_optimization": true,
     "max_cache_size_mb": 500,
-    "max_log_size_kb": 1024,
+    "max_log_size_kb": 512,
     "debug": false
   },
   "tools": {
