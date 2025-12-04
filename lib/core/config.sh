@@ -57,8 +57,6 @@ get_config() {
 }
 
 reload_config() {
-	log_info "Reloading configuration..."
-
 	# Validate config file
 	if ! jq -e '.' "${CONFIG_FILE}" >/dev/null 2>&1; then
 		log_error "Invalid configuration file, keeping current config"

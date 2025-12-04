@@ -375,22 +375,16 @@ set_wallpaper_wallutils() {
 # WALLPAPER SETTING (with fallback chain)
 # ============================================================================
 
-# Internal state for tool tracking (reset per set_wallpaper call)
-declare -ga _TRIED_TOOLS=()
-declare -g _LAST_ERROR=""
-
-# Try a wallpaper tool and track result
+# Try a wallpaper tool
 _try_tool() {
 	local tool_name="$1"
 	shift
-	_TRIED_TOOLS+=("${tool_name}")
 	log_debug "Trying wallpaper tool: ${tool_name}"
 
 	if "$@"; then
 		return 0
 	fi
 
-	_LAST_ERROR="${tool_name} failed"
 	log_debug "Tool ${tool_name} failed"
 	return 1
 }

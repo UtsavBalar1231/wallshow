@@ -73,7 +73,6 @@ declare -gr DEFAULT_CONFIG='{
 
 declare -gri RETRY_STATE_UPDATE=5
 declare -gri RETRY_WALLPAPER_SELECT=10
-declare -gri RETRY_STATUS_UPDATE=3
 declare -gri RETRY_ANIMATION_FAILURES=10
 
 # ============================================================================
@@ -83,7 +82,6 @@ declare -gri RETRY_ANIMATION_FAILURES=10
 declare -gri INTERVAL_CACHE_REFRESH=3600
 declare -gri INTERVAL_CACHE_CLEANUP=3600
 declare -gri INTERVAL_PID_CHECK=60
-declare -gri INTERVAL_GRACEFUL_EXIT_DS=20 # deciseconds (2 seconds)
 
 # ============================================================================
 # LIMITS

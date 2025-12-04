@@ -162,8 +162,3 @@ handle_signal() {
 		;;
 	esac
 }
-
-# Minimal signal handlers (CRITICAL: only set flags, no I/O!)
-handle_pause() { PAUSE_REQUESTED=true; }
-handle_resume() { RESUME_REQUESTED=true; }
-handle_stop() { STOP_REQUESTED=true; }

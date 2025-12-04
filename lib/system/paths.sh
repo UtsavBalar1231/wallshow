@@ -30,21 +30,3 @@ validate_path() {
 	echo "${resolved}"
 	return 0
 }
-
-sanitize_filename() {
-	local filename="$1"
-	# Remove path components and dangerous characters
-	local sanitized
-	local basename_output
-	if ! basename_output=$(basename "${filename}"); then
-		return 1
-	fi
-	if ! sanitized=$(echo "${basename_output}" | tr -d '\0' | sed 's/[^a-zA-Z0-9._-]/_/g'); then
-		return 1
-	fi
-	if [[ -z "${sanitized}" ]]; then
-		return 1
-	fi
-	echo "${sanitized}"
-	return 0
-}

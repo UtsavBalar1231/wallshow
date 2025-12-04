@@ -461,20 +461,14 @@ _diag_recent_errors() {
 	local issues=0
 	echo "4. Recent Errors"
 	echo "   ─────────────"
-	local last_error
-	last_error=$(read_state '.last_error // null')
-	if [[ "${last_error}" != "null" ]]; then
-		echo "   [ERROR] Last error: ${last_error}"
-		issues=$((issues + 1))
-	else
-		echo "   [OK] No recent errors recorded"
-	fi
 
 	local animation_error
 	animation_error=$(read_state '.animation_error // null')
 	if [[ "${animation_error}" != "null" ]]; then
 		echo "   [ERROR] Animation error: ${animation_error}"
 		issues=$((issues + 1))
+	else
+		echo "   [OK] No recent errors recorded"
 	fi
 	return "${issues}"
 }

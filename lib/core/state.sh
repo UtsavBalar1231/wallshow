@@ -13,19 +13,6 @@ is_valid_pid() {
 	[[ -n "$1" && "$1" =~ ^[0-9]+$ ]]
 }
 
-# Create a secure temp file with error checking
-# Usage: create_temp_file
-# Returns: path to temp file on stdout, or returns 1 on failure
-create_temp_file() {
-	local tmpfile
-	if ! tmpfile=$(mktemp); then
-		log_error "Failed to create temp file"
-		return 1
-	fi
-	chmod 600 "${tmpfile}" || log_warn "Failed to secure temp file: ${tmpfile}"
-	echo "${tmpfile}"
-}
-
 # ============================================================================
 # INPUT VALIDATION HELPERS
 # ============================================================================
@@ -104,7 +91,8 @@ init_state() {
             "swww_daemon_pid": null,
             "hyprpaper_pid": null,
             "mpvpaper_pids": []
-        }
+        },
+        "animation_error": null
     }'
 
 	if [[ ! -f "${STATE_FILE}" ]]; then
@@ -173,24 +161,6 @@ update_state_atomic() {
 
 	log_error "Failed to update state after ${RETRY_STATE_UPDATE} retries: ${update}"
 	return 1
-}
-
-add_to_history() {
-	local wallpaper="$1"
-
-	# Escape wallpaper path for JSON (required - may contain special chars)
-	local escaped_wallpaper
-	escaped_wallpaper=$(printf '%s' "${wallpaper}" | jq -Rs .)
-
-	# Use printf builtin for timestamp (no subprocess, ISO 8601 format is JSON-safe)
-	local timestamp
-	printf -v timestamp '%(%FT%T%z)T' -1
-
-	update_state_atomic "
-        .history = ([${escaped_wallpaper}] + .history | unique | .[0:${LIMIT_HISTORY_ENTRIES}]) |
-        .stats.last_change = \"${timestamp}\" |
-        .stats.changes_count += 1
-    "
 }
 
 # Combined wallpaper state update (batches current + history in single jq call)
